@@ -1,0 +1,17 @@
+{
+  "name": "kiln",
+  "version": "0.1.0",
+  "description": "Mint fully on-chain works on networked.art — assets in SSTORE2, or referenced from The Vessel via the Porthole renderer.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "esbuild src/app.js --bundle --format=esm --outfile=dist/app.js && cp index.html dist/index.html",
+    "test": "node --test 'test/**/*.test.js'",
+    "serve": "npx serve dist -l 8788",
+    "rehearse": "node script/fork-mint.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "viem": "^2.37.0"
+  }
+}

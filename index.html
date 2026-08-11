@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kiln — mint on-chain on networked.art</title>
+<style>
+  :root {
+    --bg: #101012;
+    --panel: #17171a;
+    --line: #2a2a2f;
+    --text: #e8e6e1;
+    --dim: #8b8894;
+    --ember: #e2653a;
+    --ember-dim: #8a4530;
+    --ok: #6fae7c;
+    --warn: #d9a441;
+    --err: #cf5f5f;
+    --mono: "SF Mono", ui-monospace, Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.5 var(--mono);
+  }
+  main { max-width: 780px; margin: 0 auto; padding: 2rem 1.25rem 6rem; }
+  header {
+    display: flex; align-items: baseline; justify-content: space-between;
+    border-bottom: 1px solid var(--line); padding-bottom: 1rem; margin-bottom: 2rem;
+  }
+  h1 { font-size: 1.1rem; letter-spacing: .35em; margin: 0; }
+  h1 span { color: var(--ember); }
+  #wallet { display: flex; gap: .75rem; align-items: center; }
+  #chain-badge { color: var(--dim); font-size: .8rem; }
+  #chain-badge.wrong { color: var(--err); }
+  section { margin-bottom: 2rem; }
+  section > h2 {
+    font-size: .8rem; color: var(--dim); text-transform: uppercase;
+    letter-spacing: .2em; margin: 0 0 .75rem;
+  }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 1rem; }
+  label { display: block; font-size: .8rem; color: var(--dim); margin: .75rem 0 .25rem; }
+  label:first-child { margin-top: 0; }
+  input[type=text], input[type=number], select, textarea {
+    width: 100%; background: var(--bg); color: var(--text);
+    border: 1px solid var(--line); border-radius: 4px; padding: .5rem .6rem;
+    font: inherit;
+  }
+  input:focus, select:focus, textarea:focus { outline: 1px solid var(--ember-dim); }
+  textarea { resize: vertical; min-height: 3.5rem; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  .choices { display: flex; gap: .5rem; margin-bottom: .75rem; }
+  .choices button {
+    flex: 1; background: var(--bg); color: var(--dim); border: 1px solid var(--line);
+    border-radius: 4px; padding: .5rem; font: inherit; cursor: pointer;
+  }
+  .choices button.active { color: var(--text); border-color: var(--ember); }
+  button.primary {
+    background: var(--ember); color: #16100d; border: none; border-radius: 4px;
+    padding: .65rem 1.4rem; font: inherit; font-weight: 700; cursor: pointer;
+  }
+  button.primary:disabled { background: var(--ember-dim); color: #33251f; cursor: not-allowed; }
+  button.ghost {
+    background: none; color: var(--text); border: 1px solid var(--line);
+    border-radius: 4px; padding: .5rem 1rem; font: inherit; cursor: pointer;
+  }
+  .drop {
+    border: 1px dashed var(--line); border-radius: 6px; padding: 1rem;
+    text-align: center; color: var(--dim); cursor: pointer; transition: border-color .15s;
+  }
+  .drop.over { border-color: var(--ember); }
+  .drop.filled { border-style: solid; color: var(--text); }
+  .drop small { display: block; font-size: .72rem; margin-top: .25rem; color: var(--dim); }
+  .hidden { display: none !important; }
+  #entries-list { display: flex; flex-direction: column; gap: .35rem; margin-top: .5rem; }
+  .entry-row {
+    display: flex; align-items: center; gap: .6rem; font-size: .8rem;
+    border: 1px solid var(--line); border-radius: 4px; padding: .4rem .6rem;
+  }
+  .entry-row .kind { color: var(--dim); }
+  .entry-row .size { margin-left: auto; color: var(--dim); }
+  #meter { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+  #meter div b { display: block; font-size: 1.05rem; font-weight: 600; }
+  #meter div span { font-size: .72rem; color: var(--dim); text-transform: uppercase; letter-spacing: .1em; }
+  #meter .warn b { color: var(--warn); }
+  #meter-note { grid-column: 1 / -1; font-size: .78rem; color: var(--dim); margin: 0; }
+  #preview-frame {
+    width: 100%; height: 340px; border: 1px solid var(--line);
+    border-radius: 6px; background: #000;
+  }
+  #preview-poster { max-width: 120px; max-height: 120px; border: 1px solid var(--line); border-radius: 4px; }
+  #steps { list-style: none; margin: .75rem 0 0; padding: 0; }
+  #steps li { padding: .35rem 0; font-size: .85rem; color: var(--dim); }
+  #steps li.active { color: var(--warn); }
+  #steps li.done { color: var(--ok); }
+  #steps li.failed { color: var(--err); }
+  #result a { color: var(--ember); }
+  #result code { word-break: break-all; font-size: .75rem; color: var(--dim); }
+  .note { font-size: .78rem; color: var(--dim); }
+  .error-text { color: var(--err); font-size: .8rem; white-space: pre-wrap; word-break: break-word; }
+  .assemble-toggle { display: flex; gap: .5rem; align-items: center; font-size: .78rem; margin: .75rem 0 .25rem; }
+  .assemble-toggle input { margin: 0; }
+  .order-badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 1.25rem; height: 1.25rem; padding: 0 .3rem;
+    background: var(--ember); color: #16100d; border-radius: 3px;
+    font-size: .7rem; font-weight: 700;
+  }
+  .entry-row .reorder {
+    background: none; border: 1px solid var(--line); color: var(--dim);
+    border-radius: 3px; cursor: pointer; font: inherit; font-size: .7rem;
+    line-height: 1; padding: .15rem .3rem;
+  }
+  .entry-row .reorder:hover { color: var(--text); border-color: var(--ember); }
+  #preview-actions { position: absolute; top: .5rem; right: .5rem; display: flex; gap: .4rem; }
+  #preview-actions button { font-size: .7rem; padding: .25rem .5rem; opacity: .75; }
+  #preview-actions button:hover { opacity: 1; }
+  #preview-frame { cursor: zoom-in; }
+  #modal {
+    position: fixed; inset: 0; z-index: 50; background: rgba(8,8,10,.94);
+    display: flex; flex-direction: column; padding: 1rem; gap: .75rem;
+  }
+  #modal-bar { display: flex; align-items: center; gap: .75rem; }
+  #modal-label { flex: 1; font-size: .8rem; color: var(--dim); }
+  #modal-frame { flex: 1; width: 100%; border: 1px solid var(--line); border-radius: 6px; background: #000; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>K I L N <span>●</span></h1>
+    <div id="wallet">
+      <span id="chain-badge"></span>
+      <button id="connect" class="ghost">connect wallet</button>
+      <span id="account" class="note hidden"></span>
+    </div>
+  </header>
+
+  <section id="s-destination">
+    <h2>Collection</h2>
+    <div class="panel">
+      <div class="choices" id="dest-choice">
+        <button data-dest="new" class="active">new collection</button>
+        <button data-dest="existing">existing collection</button>
+      </div>
+      <div id="dest-new">
+        <div class="row">
+          <div><label>name</label><input type="text" id="col-name" placeholder="My Collection"></div>
+          <div><label>symbol</label><input type="text" id="col-symbol" placeholder="COLL"></div>
+        </div>
+      </div>
+      <div id="dest-existing" class="hidden">
+        <label>collection</label>
+        <select id="col-select"><option>connect wallet first</option></select>
+        <p class="note" id="col-info"></p>
+      </div>
+    </div>
+  </section>
+
+  <section id="s-source">
+    <h2>Artwork</h2>
+    <div class="panel">
+      <div class="choices" id="source-choice">
+        <button data-source="upload" class="active">upload files</button>
+        <button data-source="vessel">reference a vessel token</button>
+      </div>
+
+      <div id="source-upload">
+        <div class="row">
+          <div class="drop" id="drop-image" tabindex="0">
+            drop poster image
+            <small>required — png / jpg / svg / gif · becomes the token image</small>
+          </div>
+          <div class="drop" id="drop-html" tabindex="0">
+            drop html artwork
+            <small>optional — makes it an animated token (animation_url)</small>
+          </div>
+        </div>
+        <input type="file" id="file-image" accept="image/*,.svg" class="hidden">
+        <input type="file" id="file-html" accept=".html,.htm,text/html" class="hidden">
+      </div>
+
+      <div id="source-vessel" class="hidden">
+        <label>vessel token id</label>
+        <div class="row">
+          <input type="number" id="vessel-id" min="1" placeholder="3348">
+          <select id="vessel-picker" class="hidden"></select>
+          <button class="ghost" id="vessel-inspect">inspect</button>
+        </div>
+        <p class="note" id="vessel-owned-note"></p>
+        <div id="vessel-detail" class="hidden">
+          <p class="note" id="vessel-summary"></p>
+          <p class="note hidden" id="vessel-relic-note" style="color: var(--warn)"></p>
+          <div class="choices hidden" id="vessel-source-choice">
+            <button data-vsource="relics">relic data (curated)</button>
+            <button data-vsource="vessel">underlying vessel</button>
+          </div>
+          <div class="choices" id="vessel-mode">
+            <button data-mode="pinned" class="active">pinned entries (immutable)</button>
+            <button data-mode="live">live payload (drifts)</button>
+          </div>
+          <label class="assemble-toggle">
+            <input type="checkbox" id="assemble-mode">
+            assemble mode — combine several entries into one document, in the order you pick them
+          </label>
+          <div id="entries-list"></div>
+          <p class="note hidden" id="xml-warning" style="color: var(--warn)"></p>
+          <label>content type</label>
+          <input type="text" id="vessel-mime" value="text/html">
+          <p class="note">fixed at mint — in live mode, every future payload is served as this type, so keep a rotating vault within one medium</p>
+          <label>poster image</label>
+          <div class="drop" id="drop-poster" tabindex="0">drop poster image<small>required — the token's still image</small></div>
+          <input type="file" id="file-poster" accept="image/*,.svg" class="hidden">
+          <p class="note" id="vesselPortal-status"></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="s-details">
+    <h2>Token</h2>
+    <div class="panel">
+      <div class="row">
+        <div><label>title</label><input type="text" id="tok-name" placeholder="Untitled"></div>
+        <div><label>token id</label><input type="number" id="tok-id" min="1" value="1"></div>
+      </div>
+      <label>description</label>
+      <textarea id="tok-desc" placeholder=""></textarea>
+      <label><input type="checkbox" id="auction-toggle"> start a 1/1 auction (protocol charges a $10 listing fee)</label>
+      <div id="auction-fields" class="row hidden">
+        <div><label>reserve (whole USD, min 10)</label><input type="number" id="auction-reserve" min="10" value="10"></div>
+        <div><label>duration</label>
+          <select id="auction-duration">
+            <option value="86400">24 hours</option>
+            <option value="172800">48 hours</option>
+            <option value="604800">7 days</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="s-cost">
+    <h2>Cost</h2>
+    <div class="panel" id="meter">
+      <div><b id="m-bytes">—</b><span>artifact bytes</span></div>
+      <div><b id="m-chunks">—</b><span>sstore2 chunks</span></div>
+      <div><b id="m-txs">—</b><span>transactions</span></div>
+      <div><b id="m-gas">—</b><span>est. gas</span></div>
+      <div><b id="m-eth">—</b><span>est. eth</span></div>
+      <div><b id="m-usd">—</b><span>est. usd</span></div>
+      <p id="meter-note">every byte is priced — base64 inflates files by 4/3; a vessel reference stores ~400 bytes regardless of artwork size</p>
+      <p id="size-verdict" class="note hidden" style="grid-column: 1 / -1"></p>
+    </div>
+  </section>
+
+  <section id="s-preview">
+    <h2>Preview <span class="note">— byte-identical to what mints</span></h2>
+    <div class="panel">
+      <div style="display:flex; gap:1rem; align-items:flex-start;">
+        <img id="preview-poster" class="hidden" alt="poster preview">
+        <div style="flex:1; position:relative">
+          <iframe id="preview-frame" sandbox="allow-scripts" title="artwork preview"></iframe>
+          <div id="preview-actions">
+            <button type="button" class="ghost" id="preview-enlarge">enlarge</button>
+            <button type="button" class="ghost" id="preview-newtab">open in new tab</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="s-mint">
+    <h2>Mint</h2>
+    <div class="panel">
+      <button id="mint" class="primary" disabled>connect wallet to mint</button>
+      <ul id="steps"></ul>
+      <p id="mint-error" class="error-text hidden"></p>
+      <div id="result" class="hidden">
+        <p><b>Minted.</b> <a id="r-scan" target="_blank" rel="noopener">etherscan</a> · <a id="r-net" target="_blank" rel="noopener">networked.art</a></p>
+        <p class="note">tokenURI read back from chain, decoded, rendered below — this is the proof, straight from the contract:</p>
+        <iframe id="r-frame" sandbox="allow-scripts" style="width:100%;height:340px;border:1px solid var(--line);border-radius:6px;background:#000"></iframe>
+        <p><code id="r-uri"></code></p>
+      </div>
+    </div>
+  </section>
+</main>
+<div id="modal" class="hidden">
+  <div id="modal-bar">
+    <span id="modal-label"></span>
+    <button type="button" class="ghost" id="modal-newtab">open in new tab</button>
+    <button type="button" class="ghost" id="modal-close">close ✕</button>
+  </div>
+  <iframe id="modal-frame" sandbox="allow-scripts" title="artwork, enlarged"></iframe>
+</div>
+<script type="module" src="app.js"></script>
+</body>
+</html>
