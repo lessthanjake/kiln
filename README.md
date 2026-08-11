@@ -85,7 +85,17 @@ Either source:
 
 - **the content type is part of the minted reference and cannot change.** A
   live-mode token serves every future payload under the mime set at mint, so
-  keep a rotating vault within one medium. Kiln auto-suggests the mime from
+  keep a rotating vault within one medium.
+- **entry order is document order.** `entries` is concatenated in array order,
+  so a work sharded across several vault slots reassembles exactly as you pick
+  them. Kiln defaults to single-select (one entry, one document) and offers
+  "assemble mode" for ordered multi-entry references.
+
+Because SVG is XML and vault slots are fixed-size, an SVG padded with NUL
+bytes past its closing tag renders as *"extra content at the end of the
+document"* rather than as artwork; whitespace padding is legal. Kiln checks
+the actual bytes and warns before minting, and warns again if an assembly
+would put two `<svg>` roots in one document. Kiln auto-suggests the mime from
   the referenced bytes (html, svg, png, mp3, text).
 
 **`uri()` can never revert.** Registration is append-only and a token's
