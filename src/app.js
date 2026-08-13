@@ -21,7 +21,11 @@ const VESSELPORTAL_KEY = 'kiln.vesselPortal'
 const stagedKey = (col, id) => `kiln.staged.${col?.toLowerCase()}.${id}`
 
 const GAS_EXTRA = { registerRenderer: 95_000, deployVesselPortal: 1_200_000 }
-const MAX_ENTRY_PROBE = 32
+// Vaults can hold more entries than the renderer will concatenate; show a
+// generous window so a real vault (#9994 has 41) is fully selectable, and cap
+// only to keep one inspect from pulling megabytes.
+const MAX_ENTRY_PROBE = 128
+const ENTRY_BATCH = 16
 const MAX_OWNED_CHECK = 400
 
 const state = {
@@ -353,6 +357,7 @@ $('vessel-inspect').addEventListener('click', async () => {
     const id = BigInt($('vessel-id').value || 0)
     if (id <= 0n) return
     const vessel = { address: ADDRESSES.vessel, abi: vesselAbi }
+    setInspectStatus(`reading vessel #${id}…`)
 
     // Hard rule regardless of how the id got here: only vessels this wallet
     // holds. The contract wouldn't stop you; courtesy does.
@@ -360,6 +365,7 @@ $('vessel-inspect').addEventListener('click', async () => {
     if (holder?.toLowerCase() !== state.account.toLowerCase()) {
       $('vessel-detail').classList.add('hidden')
       state.vessel = null
+      setInspectStatus('')
       showError(`this wallet doesn't hold vessel #${id} — kiln only references vessels you own`)
       recompute()
       return
@@ -377,12 +383,14 @@ $('vessel-inspect').addEventListener('click', async () => {
       ? Number(await state.pub.readContract({ ...vessel, functionName: 'craftToChosenEntry', args: [id] }))
       : 0
     const chosenEntry = isVault ? (chosenRaw === 0 ? entryCount - 1 : chosenRaw - 1) : null
-    const entries = []
-    for (let i = 0; i < Math.min(entryCount, MAX_ENTRY_PROBE); i++) {
-      const hex = await state.pub.readContract({ ...vessel, functionName: 'vaultToEntry', args: [id, BigInt(i)] })
-      const bytes = hexBytes(hex)
-      entries.push({ index: i, bytes, size: bytes.length, kind: sniff(bytes) })
-    }
+    const entries = await readEntries({
+      contract: vessel,
+      functionName: 'vaultToEntry',
+      tokenId: id,
+      from: 0,
+      count: Math.min(entryCount, MAX_ENTRY_PROBE),
+      label: 'entries',
+    })
     state.vessel = { id, type, isVault, isRelic, entryCount, chosenEntry, entries, mode: isVault ? 'pinned' : 'live' }
     // What live mode serves right now — relic override, machine output, or the
     // holder's slot — so the preview is honest for every token type.
@@ -396,11 +404,15 @@ $('vessel-inspect').addEventListener('click', async () => {
       state.vessel.relicPayload = hexBytes(await state.pub.readContract({ ...relics, functionName: 'relicToPayload', args: [id] }))
       state.vessel.relicEntryCount = Number(await state.pub.readContract({ ...relics, functionName: 'getTokenEntries', args: [id] }))
       if (isVault) {
-        for (let i = 1; i <= Math.min(state.vessel.relicEntryCount, MAX_ENTRY_PROBE); i++) {
-          const hex = await state.pub.readContract({ ...relics, functionName: 'vaultRelicToEntry', args: [id, BigInt(i)] })
-          const bytes = hexBytes(hex)
-          state.vessel.relicEntries.push({ index: i, bytes, size: bytes.length, kind: sniff(bytes) })
-        }
+        // Relic entries are 1-based.
+        state.vessel.relicEntries = await readEntries({
+          contract: relics,
+          functionName: 'vaultRelicToEntry',
+          tokenId: id,
+          from: 1,
+          count: Math.min(state.vessel.relicEntryCount, MAX_ENTRY_PROBE),
+          label: 'relic entries',
+        })
       } else {
         state.vessel.mode = 'live'
       }
@@ -426,6 +438,11 @@ $('vessel-inspect').addEventListener('click', async () => {
     srcChoice.classList.toggle('hidden', !isRelic)
     if (isRelic) setActive(srcChoice, srcChoice.querySelector(`[data-vsource=${state.vessel.sourceContract}]`))
 
+    setInspectStatus('')
+    if (state.ownedVessels) {
+      const n = state.ownedVessels.length
+      $('vessel-owned-note').textContent = `${n} vessel${n === 1 ? '' : 's'} in this wallet`
+    }
     suggestMime()
     renderEntries()
     $('vessel-detail').classList.remove('hidden')
@@ -504,6 +521,39 @@ function suggestMime() {
     : activePayload()
   if (!sample || !sample.length) return
   $('vessel-mime').value = KIND_MIME[sniff(sample)] ?? 'application/octet-stream'
+}
+
+/// Reads a run of vault entries through Multicall3. One batched request per
+/// ENTRY_BATCH instead of one round-trip per entry: a 41-entry vault went from
+/// dozens of sequential eth_calls to three. Entries can be ~10 KB each, so the
+/// batch stays small enough that a response never trips an RPC size limit.
+function setInspectStatus(text) {
+  const el = $('vessel-owned-note')
+  if (text) el.dataset.busy = '1'
+  else delete el.dataset.busy
+  if (text) el.textContent = text
+}
+
+async function readEntries({ contract, functionName, tokenId, from, count, label = 'entries' }) {
+  const out = []
+  for (let start = 0; start < count; start += ENTRY_BATCH) {
+    // Entries can be ~10 KB each, so a big vault on a slow RPC takes real
+    // time. Say so, with progress, rather than showing a blank panel.
+    setInspectStatus(`reading ${label} ${Math.min(start + ENTRY_BATCH, count)} / ${count}…`)
+    const indices = []
+    for (let i = start; i < Math.min(start + ENTRY_BATCH, count); i++) indices.push(from + i)
+    const results = await state.pub.multicall({
+      contracts: indices.map((i) => ({ ...contract, functionName, args: [tokenId, BigInt(i)] })),
+      allowFailure: true,
+      batchSize: 250_000, // one real aggregate3; viem's 1,024-BYTE default would shred it
+    })
+    for (let i = 0; i < results.length; i++) {
+      if (results[i].status !== 'success') continue
+      const bytes = hexBytes(results[i].result)
+      out.push({ index: indices[i], bytes, size: bytes.length, kind: sniff(bytes) })
+    }
+  }
+  return out
 }
 
 function hexBytes(hex) {
