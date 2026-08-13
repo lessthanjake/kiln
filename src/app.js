@@ -21,11 +21,10 @@ const VESSELPORTAL_KEY = 'kiln.vesselPortal'
 const stagedKey = (col, id) => `kiln.staged.${col?.toLowerCase()}.${id}`
 
 const GAS_EXTRA = { registerRenderer: 95_000, deployVesselPortal: 1_200_000 }
-// Vaults can hold more entries than the renderer will concatenate; show a
-// generous window so a real vault (#9994 has 41) is fully selectable, and cap
-// only to keep one inspect from pulling megabytes.
-const MAX_ENTRY_PROBE = 128
-const ENTRY_BATCH = 16
+// No display cap: every entry a vault holds is listed. The limits that matter
+// are the renderer's and they are enforced on-chain — at most MAX_ENTRIES
+// selected, at most MAX_CONTENT_BYTES assembled. Hiding entries only hid data.
+const ENTRY_BATCH = 8
 const MAX_OWNED_CHECK = 400
 
 const state = {
@@ -383,22 +382,33 @@ $('vessel-inspect').addEventListener('click', async () => {
       ? Number(await state.pub.readContract({ ...vessel, functionName: 'craftToChosenEntry', args: [id] }))
       : 0
     const chosenEntry = isVault ? (chosenRaw === 0 ? entryCount - 1 : chosenRaw - 1) : null
+    state.vessel = {
+      id, type, isVault, isRelic, entryCount, chosenEntry,
+      entries: [], relicEntries: [], sourceContract: isRelic ? 'relics' : 'vessel',
+      mode: isVault ? 'pinned' : 'live',
+    }
+    $('vessel-detail').classList.remove('hidden')
     const entries = await readEntries({
       contract: vessel,
       functionName: 'vaultToEntry',
       tokenId: id,
       from: 0,
-      count: Math.min(entryCount, MAX_ENTRY_PROBE),
+      count: entryCount,
       label: 'entries',
+      onBatch: (partial) => {
+        // Render as batches land so early entries are pickable while the rest
+        // are still arriving.
+        if (!state.vessel) return
+        state.vessel.entries = partial
+        renderEntries()
+      },
     })
-    state.vessel = { id, type, isVault, isRelic, entryCount, chosenEntry, entries, mode: isVault ? 'pinned' : 'live' }
+    state.vessel.entries = entries
     // What live mode serves right now — relic override, machine output, or the
     // holder's slot — so the preview is honest for every token type.
     state.vessel.payload = hexBytes(await state.pub.readContract({ ...vessel, functionName: 'craftToPayload', args: [id] }))
 
     // Relic data lives on its own contract, with its own 1-based entry space.
-    state.vessel.sourceContract = isRelic ? 'relics' : 'vessel'
-    state.vessel.relicEntries = []
     if (isRelic) {
       const relics = { address: ADDRESSES.relics, abi: relicsAbi }
       state.vessel.relicPayload = hexBytes(await state.pub.readContract({ ...relics, functionName: 'relicToPayload', args: [id] }))
@@ -410,8 +420,13 @@ $('vessel-inspect').addEventListener('click', async () => {
           functionName: 'vaultRelicToEntry',
           tokenId: id,
           from: 1,
-          count: Math.min(state.vessel.relicEntryCount, MAX_ENTRY_PROBE),
+          count: state.vessel.relicEntryCount,
           label: 'relic entries',
+          onBatch: (partial) => {
+            if (!state.vessel) return
+            state.vessel.relicEntries = partial
+            renderEntries()
+          },
         })
       } else {
         state.vessel.mode = 'live'
@@ -534,7 +549,7 @@ function setInspectStatus(text) {
   if (text) el.textContent = text
 }
 
-async function readEntries({ contract, functionName, tokenId, from, count, label = 'entries' }) {
+async function readEntries({ contract, functionName, tokenId, from, count, label = 'entries', onBatch }) {
   const out = []
   for (let start = 0; start < count; start += ENTRY_BATCH) {
     // Entries can be ~10 KB each, so a big vault on a slow RPC takes real
@@ -548,10 +563,25 @@ async function readEntries({ contract, functionName, tokenId, from, count, label
       batchSize: 250_000, // one real aggregate3; viem's 1,024-BYTE default would shred it
     })
     for (let i = 0; i < results.length; i++) {
-      if (results[i].status !== 'success') continue
-      const bytes = hexBytes(results[i].result)
+      let hex = results[i].status === 'success' ? results[i].result : null
+      if (hex === null) {
+        // A batched call can fail for reasons that have nothing to do with the
+        // entry — response-size limits, rate limiting, a cold fork. Retrying
+        // singly costs one round-trip and keeps a slow RPC from silently
+        // shortening the list, which would look identical to "the vault has
+        // fewer entries".
+        hex = await state.pub
+          .readContract({ ...contract, functionName, args: [tokenId, BigInt(indices[i])] })
+          .catch(() => null)
+      }
+      if (hex === null) {
+        out.push({ index: indices[i], bytes: new Uint8Array(0), size: null, kind: 'unreadable' })
+        continue
+      }
+      const bytes = hexBytes(hex)
       out.push({ index: indices[i], bytes, size: bytes.length, kind: sniff(bytes) })
     }
+    onBatch?.([...out])
   }
   return out
 }
@@ -616,9 +646,10 @@ function renderEntries() {
       : ''
     row.innerHTML = `<input type="${state.assembleMode ? 'checkbox' : 'radio'}" name="entry-pick" ${picked ? 'checked' : ''}>
       ${badge}<span>${relicSource ? 'relic entry' : 'entry'} ${e.index}</span><span class="kind">${e.kind}${isSlot ? ' · holder’s slot' : ''}</span>${arrows}<span class="size">${e.size} bytes</span>`
+    if (e.size === null) row.querySelector('input').disabled = true
     row.querySelector('input').addEventListener('click', (ev) => {
       ev.preventDefault()
-      toggleEntry(e.index)
+      if (e.size !== null) toggleEntry(e.index)
     })
     for (const btn of row.querySelectorAll('.reorder')) {
       btn.addEventListener('click', (ev) => {
