@@ -18,10 +18,21 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const IN = join(ROOT, 'contracts/out/VesselPortal.sol/VesselPortal.json')
 const OUT = join(ROOT, 'src/vesselPortalArtifact.js')
 
+const checking = process.argv.includes('--check')
+
 let built
 try {
   built = JSON.parse(readFileSync(IN, 'utf8'))
 } catch {
+  // No Foundry build output. When checking, that is the normal state on a
+  // deploy host with no Solidity toolchain — the committed artifact is all
+  // there is, and it is what will ship. Staleness is caught where a build
+  // output exists (a developer's machine, CI), not here.
+  if (checking) {
+    readFileSync(OUT, 'utf8') // but the committed artifact must exist
+    console.log('no local contract build to compare against; using the committed artifact')
+    process.exit(0)
+  }
   console.error(`Could not read ${IN}\nRun: cd contracts && forge build`)
   process.exit(1)
 }
@@ -45,7 +56,7 @@ export const vesselPortalBytecode = ${JSON.stringify(bytecode)}
 export default { abi: vesselPortalAbi, bytecode: { object: vesselPortalBytecode } }
 `
 
-if (process.argv.includes('--check')) {
+if (checking) {
   let current = ''
   try { current = readFileSync(OUT, 'utf8') } catch { /* missing */ }
   if (current !== source) {
