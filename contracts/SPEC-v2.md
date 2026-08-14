@@ -107,7 +107,16 @@ This is why Luke's WebGPU Frameworks renderer works: the program is compact.
 2. **Hybrid**: inline the sketch, fetch only the heavy library at runtime.
    Restores the dependency for the library but keeps the artwork on-chain.
    Honest middle ground; should be labelled as such in the UI.
+   **Note: this shape needs no new contract.** The runtime fetch lives in the
+   artwork HTML itself — an eth_call to the EthFS FileStore, then eval — so a
+   VesselPortal v1 token or a stock Animation-renderer token can do it today.
+   p5 on EthFS is immutable, so the fetch is deterministic: same bytes forever,
+   from any RPC. Only the library rides the runtime dependency; the sketch
+   stays pinned. (Confirm the FileStore read ABI when writing the bootstrap.)
 3. **Reject**: inlining a full framework. Document why so nobody retries it.
+
+Consequence of §2's note: this renderer exists solely for shape 1 — compact
+seeded programs. Library loading is the artwork's job, not the renderer's.
 
 ### Design
 
