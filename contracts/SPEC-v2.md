@@ -76,7 +76,17 @@ special-case, but it is free storage already paid for.
 
 ---
 
-## 2. ETHFS renderer — and the ceiling that constrains it
+## 2. ETHFS renderer — not this roadmap's to build
+
+**Decided (2026-08-14): left to the EthFS community.** A portal should be
+built by someone who lives in the world it opens onto — the natural author is
+an artist who already stores work on EthFS. This section stays as an
+invitation and a head start: the pattern, the measured constraints (the
+framework-inlining ceiling below was expensive to learn), and a verified
+reference implementation in VesselPortal, whose registration mechanics,
+totality discipline, and `_read` hardening translate directly. registerRenderer
+is permissionless per collection; nobody needs permission from anyone here to
+ship it.
 
 The Frameworks pattern: store a JS program on EthFS
 (`0xFe1411d6864592549AdE050215482e4385dFa0FB`), have the renderer read it at
