@@ -12,9 +12,14 @@ import {
   bytesToHex,
   hexToBytes,
   buildUploadArtifact,
-  buildVesselPortalReference,
-  decodeVesselPortalReference,
-  SOURCE,
+  referenceSource,
+  inlineSource,
+  absentSource,
+  isAbsent,
+  isMutableSource,
+  buildArtifact,
+  decodeArtifact,
+  KIND,
   KIND_MIME,
   MAX_CONTENT_BYTES,
   WARN_CONTENT_BYTES,
@@ -80,58 +85,67 @@ test('image+animation artifact abi-decodes as (string,string)', () => {
   assert.equal(anim, animation)
 })
 
-test('vesselPortal reference round-trips through abi encoding', () => {
-  const input = {
-    imageDataURI: 'data:image/png;base64,cG9zdGVy',
-    mime: 'text/html',
-    vesselTokenId: 3348,
-    entries: [1, 2, 5],
-  }
-  const { bytes } = buildVesselPortalReference(input)
-  const decoded = decodeVesselPortalReference(bytes)
-  assert.equal(decoded.imageDataURI, input.imageDataURI)
-  assert.equal(decoded.mime, input.mime)
-  assert.equal(decoded.vesselTokenId, 3348n)
-  assert.deepEqual([...decoded.entries], [1n, 2n, 5n])
-  assert.equal(decoded.source, SOURCE.vessel)
+test('a fully referenced artifact round-trips and stays tiny', () => {
+  const poster = referenceSource({ kind: KIND.vessel, vesselTokenId: 9994, entries: [40], mime: 'image/svg+xml' })
+  const animation = referenceSource({
+    kind: KIND.vessel, vesselTokenId: 9994, entries: [32, 33, 34, 35, 36, 37, 38], mime: 'text/html',
+  })
+  const { bytes } = buildArtifact({ poster, animation })
+  // ~75 KB of artwork + ~10 KB of poster, referenced in under 1 KB.
+  assert.ok(bytes.length < 1024, `expected < 1KB, got ${bytes.length}`)
+
+  const decoded = decodeArtifact(bytes)
+  assert.equal(decoded.poster.kind, KIND.vessel)
+  assert.equal(decoded.poster.tokenId, 9994n)
+  assert.deepEqual([...decoded.animation.entries], [32n, 33n, 34n, 35n, 36n, 37n, 38n])
+  assert.equal(decoded.animation.mime, 'text/html')
 })
 
-test('live-mode vesselPortal reference has empty entries', () => {
-  const { bytes } = buildVesselPortalReference({
-    imageDataURI: 'data:image/png;base64,cA==',
-    vesselTokenId: 9994,
-    entries: [],
+test('inline sources carry raw bytes, not a pre-formed data URI', () => {
+  const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47])
+  const { bytes } = buildArtifact({
+    poster: inlineSource({ bytes: png, mime: 'image/png' }),
+    animation: absentSource(),
   })
-  const decoded = decodeVesselPortalReference(bytes)
-  assert.equal(decoded.entries.length, 0)
-  assert.equal(decoded.mime, 'text/html')
-  assert.equal(decoded.source, SOURCE.vessel)
-})
-
-test('relic reference carries source 1 and 1-based entries', () => {
-  const { bytes } = buildVesselPortalReference({
-    imageDataURI: 'data:image/png;base64,cA==',
-    mime: 'audio/mpeg',
-    vesselTokenId: 9778,
-    entries: [1],
-    source: SOURCE.relics,
-  })
-  const decoded = decodeVesselPortalReference(bytes)
-  assert.equal(decoded.source, SOURCE.relics)
-  assert.deepEqual([...decoded.entries], [1n])
-  assert.equal(decoded.mime, 'audio/mpeg')
+  const { poster, animation } = decodeArtifact(bytes)
+  assert.equal(poster.data, '0x89504e47')
+  assert.equal(poster.mime, 'image/png')
+  assert.ok(isAbsent(animation), 'empty inline data means absent')
+  assert.ok(!isAbsent(poster))
 })
 
 test('relic entry 0 is rejected at build time', () => {
   assert.throws(
-    () => buildVesselPortalReference({
-      imageDataURI: 'data:image/png;base64,cA==',
-      vesselTokenId: 9778,
-      entries: [0],
-      source: SOURCE.relics,
-    }),
+    () => referenceSource({ kind: KIND.relics, vesselTokenId: 9778, entries: [0], mime: 'text/html' }),
     /1-based/,
   )
+})
+
+test('entries beyond MAX_ENTRIES are rejected at build time', () => {
+  assert.throws(
+    () => referenceSource({
+      kind: KIND.vessel, vesselTokenId: 1, entries: Array.from({ length: MAX_ENTRIES + 1 }, (_, i) => i), mime: 'text/html',
+    }),
+    /at most/,
+  )
+})
+
+test('cross-field violations are rejected before they reach the chain', () => {
+  const bad = { ...referenceSource({ kind: KIND.vessel, vesselTokenId: 1, entries: [], mime: 'x/y' }), data: '0xdead' }
+  assert.throws(() => buildArtifact({ poster: absentSource(), animation: bad }), /cannot carry inline data/)
+
+  const bad2 = { ...inlineSource({ bytes: new Uint8Array([1]), mime: 'x/y' }), entries: [1n] }
+  assert.throws(() => buildArtifact({ poster: bad2, animation: absentSource() }), /cannot have entries/)
+})
+
+test('mutability mirrors the contract marker', () => {
+  const pinned = referenceSource({ kind: KIND.vessel, vesselTokenId: 1, entries: [1], mime: 'x/y' })
+  const live = referenceSource({ kind: KIND.vessel, vesselTokenId: 1, entries: [], mime: 'x/y' })
+  const relicPinned = referenceSource({ kind: KIND.relics, vesselTokenId: 1, entries: [1], mime: 'x/y' })
+  assert.equal(isMutableSource(pinned), false, 'pinned vault entries are permanent')
+  assert.equal(isMutableSource(live), true, 'live payload follows the holder')
+  assert.equal(isMutableSource(relicPinned), true, 'relic bytes stay curator-editable')
+  assert.equal(isMutableSource(inlineSource({ bytes: new Uint8Array([1]), mime: 'x/y' })), false)
 })
 
 test('KIND_MIME maps every sniffer kind', () => {
@@ -227,12 +241,12 @@ test('auctionExpiry is computed from now, not stored', () => {
   assert.equal(auctionExpiry(1_000_000, 86_400), 1_086_400n)
 })
 
-test('content size verdict tracks the renderer ceiling', () => {
+test('content size verdict tracks the shared renderer budget', () => {
   assert.equal(contentSizeVerdict(50_000).level, 'ok')
   assert.equal(contentSizeVerdict(WARN_CONTENT_BYTES + 1).level, 'warn')
   assert.equal(contentSizeVerdict(MAX_CONTENT_BYTES + 1).level, 'error')
   // The JS mirror must match the constants the contract enforces.
-  assert.equal(MAX_CONTENT_BYTES, 192 * 1024)
+  assert.equal(MAX_CONTENT_BYTES, 128 * 1024)
   assert.equal(MAX_ENTRIES, 64)
 })
 

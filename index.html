@@ -209,8 +209,18 @@
           <input type="text" id="vessel-mime" value="text/html">
           <p class="note">fixed at mint — in live mode, every future payload is served as this type, so keep a rotating vault within one medium</p>
           <label>poster image</label>
-          <div class="drop" id="drop-poster" tabindex="0">drop poster image<small>required — the token's still image</small></div>
-          <input type="file" id="file-poster" accept="image/*,.svg" class="hidden">
+          <div class="choices" id="poster-mode">
+            <button data-pmode="upload" class="active">upload a file</button>
+            <button data-pmode="vessel">use a vessel entry</button>
+          </div>
+          <div id="poster-upload">
+            <div class="drop" id="drop-poster" tabindex="0">drop poster image<small>stored in the token — you pay for its size</small></div>
+            <input type="file" id="file-poster" accept="image/*,.svg" class="hidden">
+          </div>
+          <div id="poster-vessel" class="hidden">
+            <select id="poster-entry"><option value="">inspect a vessel, then pick an entry…</option></select>
+            <p class="note">referenced, not stored — costs ~100 bytes whatever its size</p>
+          </div>
           <p class="note" id="vesselPortal-status"></p>
         </div>
       </div>

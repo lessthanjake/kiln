@@ -87,60 +87,110 @@ export function buildUploadArtifact({ imageDataURI, animationDataURI }) {
   return { bytes: hexToBytes(encoded), rendererIndex: RENDERER.animation }
 }
 
-// VesselPortal path. The artifact stores only a reference; the artwork bytes
-// stay on The Vessel (source 0) or the Relics contract (source 1).
-// Source 0: `entries` non-empty pins immutable vault entries (0-based);
-// empty follows craftToPayload live.
-// Source 1: `entries` non-empty pins relic entries (1-BASED, vault-relics
-// only, bytes remain curator-editable); empty follows relicToPayload.
-export const SOURCE = { vessel: 0, relics: 1 }
+// VesselPortal path. A token is two Sources — a poster and an animation —
+// each of which resolves from The Vessel (kind 0), the Relics contract
+// (kind 1), or bytes carried inline in the artifact (kind 2).
+//
+// kind 0: `entries` non-empty pins immutable vault entries (0-BASED);
+//         empty follows craftToPayload live (holder-controlled).
+// kind 1: `entries` non-empty pins relic entries (1-BASED, vault-relics only,
+//         bytes stay curator-editable); empty follows relicToPayload.
+// kind 2: `data` holds raw bytes. NOT a data URI — the renderer builds the
+//         data URI from `data` + `mime`, so pre-wrapping double-encodes.
+//         Empty `data` means the source is absent (image-only tokens).
+export const KIND = { vessel: 0, relics: 1, inline: 2 }
 
-// Mirrors VesselPortal's on-chain limits. Content above MAX_CONTENT_BYTES is
-// refused by the renderer (the token degrades to its poster); above
-// WARN_CONTENT_BYTES it still renders but is close enough to a standard 50M
-// eth_call cap that some clients may balk, so the UI says so before minting.
-export const MAX_CONTENT_BYTES = 192 * 1024
-export const WARN_CONTENT_BYTES = 128 * 1024
+// Mirrors VesselPortal's on-chain limits.
+// MAX_CONTENT_BYTES is a budget shared by BOTH sources, because uri() puts
+// them in one document and gas tracks their sum.
+export const MAX_CONTENT_BYTES = 128 * 1024
+export const WARN_CONTENT_BYTES = 96 * 1024
 export const MAX_ENTRIES = 64
+export const MAX_TEXT_BYTES = 2048
 
+/// `byteLength` must be the TOTAL resolved content of poster + animation.
 export function contentSizeVerdict(byteLength) {
   if (byteLength > MAX_CONTENT_BYTES) {
     return {
       level: 'error',
-      message: `${byteLength.toLocaleString()} bytes exceeds the renderer's ${MAX_CONTENT_BYTES.toLocaleString()}-byte ceiling — this token would show only its poster`,
+      message: `${byteLength.toLocaleString()} bytes of content exceeds the renderer's ${MAX_CONTENT_BYTES.toLocaleString()}-byte budget (poster and artwork share it) — this token would show only its poster`,
     }
   }
   if (byteLength > WARN_CONTENT_BYTES) {
     return {
       level: 'warn',
-      message: `${byteLength.toLocaleString()} bytes is near the limit wallets and marketplaces can render (~50M gas)`,
+      message: `${byteLength.toLocaleString()} bytes is near the ${MAX_CONTENT_BYTES.toLocaleString()}-byte budget wallets and marketplaces can render`,
     }
   }
   return { level: 'ok', message: '' }
 }
 
-const REFERENCE_TYPES = [
-  { type: 'string' }, { type: 'string' }, { type: 'uint256' }, { type: 'uint256[]' }, { type: 'uint8' },
-]
+const SOURCE_TYPE = {
+  type: 'tuple',
+  components: [
+    { name: 'kind', type: 'uint8' },
+    { name: 'tokenId', type: 'uint256' },
+    { name: 'entries', type: 'uint256[]' },
+    { name: 'mime', type: 'string' },
+    { name: 'data', type: 'bytes' },
+  ],
+}
+const ARTIFACT_TYPES = [SOURCE_TYPE, SOURCE_TYPE]
 
-export function buildVesselPortalReference({ imageDataURI, mime = 'text/html', vesselTokenId, entries, source = SOURCE.vessel }) {
-  if (!imageDataURI) throw new Error('a poster image is required')
-  if (source === SOURCE.relics && entries.some((e) => BigInt(e) === 0n)) {
+/// A source reading pinned entries or a live payload from the Vessel/Relics.
+export function referenceSource({ kind, vesselTokenId, entries = [], mime }) {
+  if (kind !== KIND.vessel && kind !== KIND.relics) {
+    throw new Error(`referenceSource expects kind vessel or relics, got ${kind}`)
+  }
+  if (entries.length > MAX_ENTRIES) {
+    throw new Error(`at most ${MAX_ENTRIES} entries per source, got ${entries.length}`)
+  }
+  if (kind === KIND.relics && entries.some((e) => BigInt(e) === 0n)) {
     throw new Error('relic entries are 1-based — entry 0 does not exist')
   }
-  const encoded = encodeAbiParameters(
-    REFERENCE_TYPES,
-    [imageDataURI, mime, BigInt(vesselTokenId), entries.map(BigInt), source],
-  )
-  return { bytes: hexToBytes(encoded) }
+  return { kind, tokenId: BigInt(vesselTokenId), entries: entries.map(BigInt), mime, data: '0x' }
 }
 
-export function decodeVesselPortalReference(bytes) {
-  const [imageDataURI, mime, vesselTokenId, entries, source] = decodeAbiParameters(
-    REFERENCE_TYPES,
-    bytesToHex(bytes),
-  )
-  return { imageDataURI, mime, vesselTokenId, entries, source }
+/// A source carrying raw bytes in the artifact. `bytes` is the FILE, not a
+/// data URI: the renderer wraps it.
+export function inlineSource({ bytes, mime }) {
+  return { kind: KIND.inline, tokenId: 0n, entries: [], mime, data: bytesToHex(bytes) }
+}
+
+/// The absent source — how a token says "no animation" or "no poster".
+export function absentSource() {
+  return { kind: KIND.inline, tokenId: 0n, entries: [], mime: '', data: '0x' }
+}
+
+export function isAbsent(source) {
+  return source.kind === KIND.inline && (source.data === '0x' || source.data.length <= 2)
+}
+
+export function buildArtifact({ poster, animation }) {
+  // The contract rejects fields that cannot apply to a kind, because dead
+  // bytes are carried across frames on every render.
+  for (const [label, s] of [['poster', poster], ['animation', animation]]) {
+    if (s.kind === KIND.inline && s.entries.length) {
+      throw new Error(`${label}: inline sources cannot have entries`)
+    }
+    if (s.kind !== KIND.inline && s.data !== '0x') {
+      throw new Error(`${label}: reference sources cannot carry inline data`)
+    }
+  }
+  return { bytes: hexToBytes(encodeAbiParameters(ARTIFACT_TYPES, [poster, animation])) }
+}
+
+export function decodeArtifact(bytes) {
+  const [poster, animation] = decodeAbiParameters(ARTIFACT_TYPES, bytesToHex(bytes))
+  return { poster, animation }
+}
+
+/// True when a source resolves through a path a third party can change after
+/// the mint — mirrors the contract's `"mutable":true` marker.
+export function isMutableSource(source) {
+  if (source.kind === KIND.inline) return false
+  if (source.kind === KIND.relics) return true
+  return source.entries.length === 0
 }
 
 // ── XML validity ────────────────────────────────────────────────────────────

@@ -5,9 +5,10 @@
 //
 //   1. Upload path — cloneCollectionAndMint with a small HTML artwork,
 //      auction included; asserts tokenURI decodes back to the exact inputs.
-//   2. VesselPortal path — deploy VesselPortal, register it, mint a token that
-//      references vessel #3348 entry 5 (RGB Carrier); asserts the rendered
-//      animation equals the bytes read straight off The Vessel.
+//   2-4. VesselPortal paths — deploy, register, then mint with an inline
+//      poster, with BOTH poster and artwork referenced (the point of the
+//      design), and against a relic. Every rendered byte is asserted against
+//      a direct read of the source contract.
 //
 // Usage: npm run rehearse   (MAINNET_RPC_URL overrides the fork source)
 
@@ -21,11 +22,11 @@ import {
 import { privateKeyToAccount } from 'viem/accounts'
 
 import {
-  ADDRESSES, buildUploadArtifact, buildVesselPortalReference, chunkArtifact,
+  ADDRESSES, buildUploadArtifact, chunkArtifact, KIND, referenceSource,
+  inlineSource, absentSource, buildArtifact,
   toDataURI, utf8Bytes, bytesToHex, base64Decode, estimateGas, usdToWei, auctionExpiry,
 } from '../src/kiln.js'
 import { factoryAbi, collectionAbi, auctionsAbi, chainlinkAbi, vesselAbi, relicsAbi } from '../src/abi.js'
-import { SOURCE } from '../src/kiln.js'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const FORK_URL = process.env.MAINNET_RPC_URL ?? 'https://ethereum-rpc.publicnode.com'
@@ -55,8 +56,12 @@ const chain = defineChain({
   rpcUrls: { default: { http: [`http://127.0.0.1:${ANVIL_PORT}`] } },
 })
 const account = privateKeyToAccount(KEY)
-const pub = createPublicClient({ chain, transport: http() })
-const wallet = createWalletClient({ chain, transport: http(), account })
+// A cold fork faults every storage slot in from upstream, and a fully
+// referenced token reads ~75 KB across eight entries — well past viem's 10s
+// default. This is fork latency, not chain cost.
+const transport = http(undefined, { timeout: 180_000 })
+const pub = createPublicClient({ chain, transport })
+const wallet = createWalletClient({ chain, transport, account })
 
 for (let i = 0; ; i++) {
   try { await pub.getBlockNumber(); break }
@@ -124,71 +129,104 @@ assert(json1.animation_url === animationDataURI, 'tokenURI animation_url is byte
 const decodedHtml = new TextDecoder().decode(base64Decode(json1.animation_url.split(',')[1]))
 assert(decodedHtml === artworkHtml, 'animation decodes back to the exact source HTML')
 
-// ── path 2: vesselPortal, vessel reference ──────────────────────────────────────
+// ── path 2: vessel animation + inline poster ────────────────────────────────
 
-console.log('\n[2/2] VesselPortal path — reference vessel #3348 entry 5 (RGB Carrier)')
+console.log('\n[2/4] VesselPortal — vessel animation, uploaded poster')
 
-const artifact = JSON.parse(readFileSync(join(ROOT, 'contracts/out/VesselPortal.sol/VesselPortal.json'), 'utf8'))
+const artifactJson = JSON.parse(readFileSync(join(ROOT, 'contracts/out/VesselPortal.sol/VesselPortal.json'), 'utf8'))
 const deployHash = await wallet.deployContract({
-  abi: artifact.abi, bytecode: artifact.bytecode.object, args: [ADDRESSES.vessel, ADDRESSES.relics],
+  abi: artifactJson.abi, bytecode: artifactJson.bytecode.object, args: [ADDRESSES.vessel, ADDRESSES.relics],
 })
-const { contractAddress: vesselPortalAddr } = await pub.waitForTransactionReceipt({ hash: deployHash })
-console.log(`  VesselPortal deployed: ${vesselPortalAddr}`)
+const { contractAddress: portalAddr } = await pub.waitForTransactionReceipt({ hash: deployHash })
+console.log(`  VesselPortal deployed: ${portalAddr}`)
 
-await send('registerRenderer', { ...collection, functionName: 'registerRenderer', args: [vesselPortalAddr] })
-const vesselPortalIndex = (await pub.readContract({ ...collection, functionName: 'rendererCount' })) - 1n
-const registered = await pub.readContract({ ...collection, functionName: 'rendererAt', args: [Number(vesselPortalIndex)] })
-assert(registered.toLowerCase() === vesselPortalAddr.toLowerCase(), `VesselPortal registered at renderer index ${vesselPortalIndex}`)
+await send('registerRenderer', { ...collection, functionName: 'registerRenderer', args: [portalAddr] })
+const portalIndex = (await pub.readContract({ ...collection, functionName: 'rendererCount' })) - 1n
+const registered = await pub.readContract({ ...collection, functionName: 'rendererAt', args: [Number(portalIndex)] })
+assert(registered.toLowerCase() === portalAddr.toLowerCase(), `registered at renderer index ${portalIndex}`)
 
 const vessel = { address: ADDRESSES.vessel, abi: vesselAbi }
-const entryBytesHex = await pub.readContract({ ...vessel, functionName: 'vaultToEntry', args: [3348n, 5n] })
+const entry5 = await pub.readContract({ ...vessel, functionName: 'vaultToEntry', args: [3348n, 5n] })
 
-const { bytes: refBytes } = buildVesselPortalReference({
-  imageDataURI, mime: 'text/html', vesselTokenId: 3348n, entries: [5n],
-})
-const params2 = {
-  tokenId: 2n,
-  artifact: chunkArtifact(refBytes).map(bytesToHex),
-  name: 'Through the VesselPortal',
-  description: 'Kiln fork rehearsal — vessel reference',
-  rendererIndex: Number(vesselPortalIndex),
-  rendererData: 0n,
+const mintReference = async (tokenId, name, artifactBytes) => {
+  const params = {
+    tokenId,
+    artifact: chunkArtifact(artifactBytes).map(bytesToHex),
+    name,
+    description: 'Kiln fork rehearsal',
+    rendererIndex: Number(portalIndex),
+    rendererData: 0n,
+  }
+  return send(`mint (${name})`, { ...collection, functionName: 'mint', args: [params] })
 }
-const receipt2 = await send('mint (vesselPortal reference)', { ...collection, functionName: 'mint', args: [params2] })
 
-const uri2 = await pub.readContract({ ...collection, functionName: 'tokenURI', args: [2n] })
-const json2 = JSON.parse(new TextDecoder().decode(base64Decode(uri2.split(',')[1])))
-const renderedBytes = base64Decode(json2.animation_url.split(',')[1])
-assert(json2.animation_url.startsWith('data:text/html;base64,'), 'vesselPortal animation_url is typed text/html')
-assert(bytesToHex(renderedBytes) === entryBytesHex, 'rendered animation equals vaultToEntry(3348, 5) byte for byte')
-assert(json2.image === imageDataURI, 'vesselPortal poster survives the reference round-trip')
-console.log(`  reference artifact was ${refBytes.length} bytes for a ${renderedBytes.length}-byte artwork`)
+const readMeta = async (tokenId) => {
+  const uri = await pub.readContract({ ...collection, functionName: 'tokenURI', args: [tokenId] })
+  return JSON.parse(new TextDecoder().decode(base64Decode(uri.split(',')[1])))
+}
 
-// ── path 3: relic reference ─────────────────────────────────────────────────
+const { bytes: ref2 } = buildArtifact({
+  poster: inlineSource({ bytes: posterPng, mime: 'image/png' }),
+  animation: referenceSource({ kind: KIND.vessel, vesselTokenId: 3348n, entries: [5n], mime: 'text/html' }),
+})
+const receipt2 = await mintReference(2n, 'inline poster', ref2)
+const meta2 = await readMeta(2n)
+assert(
+  bytesToHex(base64Decode(meta2.animation_url.split(',')[1])) === entry5,
+  'animation equals vaultToEntry(3348, 5) byte for byte',
+)
+assert(meta2.image === toDataURI(posterPng, 'image/png'), 'inline poster round-trips')
+assert(!meta2.mutable, 'pinned sources are not marked mutable')
 
-console.log('\n[3/3] Relic path — pin vault-relic #9778 entry 1 (Manhattan Blocks)')
+// ── path 3: BOTH sources referenced — the point of this design ──────────────
+
+console.log('\n[3/4] VesselPortal — vault poster + vault animation, nothing stored')
+
+const posterEntry = await pub.readContract({ ...vessel, functionName: 'vaultToEntry', args: [9994n, 40n] })
+const { bytes: ref3 } = buildArtifact({
+  poster: referenceSource({ kind: KIND.vessel, vesselTokenId: 9994n, entries: [40n], mime: 'image/svg+xml' }),
+  animation: referenceSource({
+    kind: KIND.vessel, vesselTokenId: 9994n, entries: [32n, 33n, 34n, 35n, 36n, 37n, 38n], mime: 'text/html',
+  }),
+})
+const posterBytes = (posterEntry.length - 2) / 2
+console.log(`  ${posterBytes.toLocaleString()}-byte poster + 65,105-byte artwork referenced in ${ref3.length} bytes`)
+assert(ref3.length < 1024, 'a fully referenced artifact stays under 1 KB')
+
+const receipt3 = await mintReference(3n, 'both referenced', ref3)
+const meta3 = await readMeta(3n)
+assert(
+  bytesToHex(base64Decode(meta3.image.split(',')[1])) === posterEntry,
+  'poster equals vaultToEntry(9994, 40) byte for byte — never stored in the token',
+)
+const assembled = base64Decode(meta3.animation_url.split(',')[1])
+assert(assembled.length === 65_105, `sharded document reassembles to 65,105 bytes (got ${assembled.length})`)
+assert(new TextDecoder().decode(assembled.subarray(0, 15)) === '<!DOCTYPE html>', 'and starts as one HTML document')
+
+// ── path 4: relic reference ─────────────────────────────────────────────────
+
+console.log('\n[4/4] VesselPortal — relic source')
 
 const relics = { address: ADDRESSES.relics, abi: relicsAbi }
-const relicBytesHex = await pub.readContract({ ...relics, functionName: 'vaultRelicToEntry', args: [9778n, 1n] })
-
-const { bytes: relicRef } = buildVesselPortalReference({
-  imageDataURI, mime: 'application/octet-stream', vesselTokenId: 9778n, entries: [1n], source: SOURCE.relics,
+const relicBytes = await pub.readContract({ ...relics, functionName: 'vaultRelicToEntry', args: [9778n, 1n] })
+const { bytes: ref4 } = buildArtifact({
+  poster: inlineSource({ bytes: posterPng, mime: 'image/png' }),
+  animation: referenceSource({
+    kind: KIND.relics, vesselTokenId: 9778n, entries: [1n], mime: 'application/octet-stream',
+  }),
 })
-const params3 = {
-  tokenId: 3n,
-  artifact: chunkArtifact(relicRef).map(bytesToHex),
-  name: 'Relic Through the VesselPortal',
-  description: 'Kiln fork rehearsal — relic reference',
-  rendererIndex: Number(vesselPortalIndex),
-  rendererData: 0n,
-}
-const receipt3 = await send('mint (relic reference)', { ...collection, functionName: 'mint', args: [params3] })
+const receipt4 = await mintReference(4n, 'relic reference', ref4)
+const meta4 = await readMeta(4n)
+assert(
+  bytesToHex(base64Decode(meta4.animation_url.split(',')[1])) === relicBytes,
+  'animation equals vaultRelicToEntry(9778, 1) byte for byte',
+)
+assert(meta4.mutable === true, 'relic sources are marked mutable — curators can edit them')
 
-const uri3 = await pub.readContract({ ...collection, functionName: 'tokenURI', args: [3n] })
-const json3 = JSON.parse(new TextDecoder().decode(base64Decode(uri3.split(',')[1])))
-const relicRendered = base64Decode(json3.animation_url.split(',')[1])
-assert(bytesToHex(relicRendered) === relicBytesHex, 'rendered animation equals vaultRelicToEntry(9778, 1) byte for byte')
-
-console.log(`\nRehearsal passed. Upload mint: ${receipt1.gasUsed} gas. VesselPortal mint: ${receipt2.gasUsed} gas. Relic mint: ${receipt3.gasUsed} gas.`)
+console.log(`\nRehearsal passed.
+  upload (stock renderers)      ${receipt1.gasUsed} gas
+  inline poster + vault artwork ${receipt2.gasUsed} gas
+  BOTH referenced               ${receipt3.gasUsed} gas
+  relic reference               ${receipt4.gasUsed} gas`)
 anvil.kill()
 process.exit(0)

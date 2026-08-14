@@ -8,8 +8,9 @@ import {
 import { mainnet } from 'viem/chains'
 
 import {
-  ADDRESSES, CHUNK_SIZE, SOURCE, KIND_MIME, MAX_ENTRIES, contentSizeVerdict,
-  xmlAssemblyWarnings, buildUploadArtifact, buildVesselPortalReference,
+  ADDRESSES, CHUNK_SIZE, KIND_MIME, MAX_ENTRIES, contentSizeVerdict,
+  xmlAssemblyWarnings, buildUploadArtifact,
+  KIND, referenceSource, inlineSource, absentSource, buildArtifact, isMutableSource,
   chunkArtifact, toDataURI, bytesToHex, base64Decode, estimateGas,
   usdToWei, costFromGas, planFlow, auctionExpiry,
 } from './kiln.js'
@@ -344,7 +345,8 @@ wireDrop('drop-html', 'file-html', async (file, drop) => {
   markFilled(drop, file); recompute()
 })
 wireDrop('drop-poster', 'file-poster', async (file, drop) => {
-  state.poster = { dataURI: toDataURI(await fileBytes(file), file.type || 'image/png') }
+  const raw = await fileBytes(file)
+  state.poster = { bytes: raw, mime: file.type || 'image/png', dataURI: toDataURI(raw, file.type || 'image/png') }
   markFilled(drop, file); recompute()
 })
 
@@ -460,6 +462,9 @@ $('vessel-inspect').addEventListener('click', async () => {
     }
     suggestMime()
     renderEntries()
+    // A newly inspected vessel invalidates a poster pick from the old one.
+    if (state.posterPick && state.posterPick.vesselId !== id) state.posterPick = null
+    renderPosterChoices()
     $('vessel-detail').classList.remove('hidden')
     setActive($('vessel-mode'), $('vessel-mode').querySelector(`[data-mode=${state.vessel.mode}]`))
     recompute()
@@ -683,19 +688,41 @@ function currentArtifact() {
     return buildUploadArtifact({ imageDataURI: state.image.dataURI, animationDataURI: state.html?.dataURI })
   }
   // vessel
-  if (!state.vessel || !state.poster) return null
+  if (!state.vessel) return null
+  const poster = currentPosterSource()
+  if (!poster) return null
+
   const pinned = state.vessel.mode === 'pinned'
   // Selection order — not index order — is the order VesselPortal concatenates.
   const entries = pinned ? [...selectionList()] : []
   if (pinned && entries.length === 0) return null
-  const { bytes } = buildVesselPortalReference({
-    imageDataURI: state.poster.dataURI,
-    mime: $('vessel-mime').value || 'text/html',
+
+  const animation = referenceSource({
+    kind: state.vessel.sourceContract === 'relics' ? KIND.relics : KIND.vessel,
     vesselTokenId: state.vessel.id,
     entries,
-    source: state.vessel.sourceContract === 'relics' ? SOURCE.relics : SOURCE.vessel,
+    mime: $('vessel-mime').value || 'text/html',
   })
+  const { bytes } = buildArtifact({ poster, animation })
   return { bytes, rendererIndex: null } // resolved at mint (registered index)
+}
+
+/// The poster as a Source: an uploaded file rides inline, a chosen vault entry
+/// is referenced — which is the whole point of this renderer, since a
+/// referenced poster costs ~100 bytes instead of its full size in storage.
+function currentPosterSource() {
+  if (state.posterMode === 'vessel') {
+    const pick = state.posterPick
+    if (!pick) return null
+    return referenceSource({
+      kind: KIND.vessel,
+      vesselTokenId: pick.vesselId,
+      entries: [pick.index],
+      mime: pick.mime,
+    })
+  }
+  if (!state.poster) return null
+  return inlineSource({ bytes: state.poster.bytes, mime: state.poster.mime })
 }
 
 function currentSteps(chunkCount, byteLength) {
@@ -756,13 +783,21 @@ function recompute() {
 
 // The bytes the renderer will actually assemble — what determines whether
 // wallets and marketplaces can render the token at all.
+/// Total content the renderer will assemble. Poster and animation SHARE the
+/// on-chain budget, so the meter has to add them: two individually-legal
+/// sources can still exceed what any RPC will render.
 function resolvedContentSize() {
   if (state.source === 'upload') {
     return state.html ? state.html.dataURI.length : (state.image?.dataURI.length ?? 0)
   }
   if (!state.vessel) return 0
-  if (state.vessel.mode !== 'pinned') return activePayload().length
-  return selectedEntries().reduce((n, e) => n + e.bytes.length, 0)
+  const animation = state.vessel.mode !== 'pinned'
+    ? activePayload().length
+    : selectedEntries().reduce((n, e) => n + e.bytes.length, 0)
+  const poster = state.posterMode === 'vessel'
+    ? (state.posterPick?.size ?? 0)
+    : (state.poster?.bytes.length ?? 0)
+  return animation + poster
 }
 
 function updateXmlWarning() {
@@ -963,6 +998,51 @@ async function showResult(collection, tokenId) {
   $('r-uri').textContent = `${collection} · token ${tokenId} · tokenURI ${uri.length.toLocaleString()} chars, fully on-chain`
   $('result').classList.remove('hidden')
 }
+
+// ── poster source ───────────────────────────────────────────────────────────
+
+state.posterMode = 'upload'
+
+for (const btn of $('poster-mode').querySelectorAll('button')) {
+  btn.addEventListener('click', () => {
+    state.posterMode = btn.dataset.pmode
+    setActive($('poster-mode'), btn)
+    $('poster-upload').classList.toggle('hidden', state.posterMode !== 'upload')
+    $('poster-vessel').classList.toggle('hidden', state.posterMode !== 'vessel')
+    renderPosterChoices()
+    recompute()
+  })
+}
+
+/// Offers the inspected vessel's entries as poster candidates. Only image-ish
+/// entries: an HTML entry would render as a broken thumbnail everywhere.
+function renderPosterChoices() {
+  const sel = $('poster-entry')
+  const candidates = (state.vessel?.entries ?? []).filter(
+    (e) => e.size !== null && (e.kind === 'svg' || e.kind === 'png'),
+  )
+  if (!state.vessel) {
+    sel.innerHTML = '<option value="">inspect a vessel, then pick an entry…</option>'
+    return
+  }
+  if (!candidates.length) {
+    sel.innerHTML = `<option value="">#${state.vessel.id} has no image entries — upload a file instead</option>`
+    state.posterPick = null
+    return
+  }
+  sel.innerHTML = '<option value="">pick an entry…</option>'
+    + candidates.map((e) => `<option value="${e.index}">entry ${e.index} — ${e.kind}, ${e.size.toLocaleString()} bytes</option>`).join('')
+  if (state.posterPick) sel.value = String(state.posterPick.index)
+}
+
+$('poster-entry').addEventListener('change', (e) => {
+  const index = Number(e.target.value)
+  const entry = (state.vessel?.entries ?? []).find((x) => x.index === index)
+  state.posterPick = entry
+    ? { vesselId: state.vessel.id, index: entry.index, mime: KIND_MIME[entry.kind], size: entry.size }
+    : null
+  recompute()
+})
 
 // ── assemble mode ───────────────────────────────────────────────────────────
 
