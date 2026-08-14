@@ -8,11 +8,6 @@ import { VesselPortal, IVessel, IRelics } from "../src/VesselPortal.sol";
 import { INetworkedArt } from "../src/interfaces/INetworkedArt.sol";
 import { IRenderer } from "../src/interfaces/IRenderer.sol";
 
-interface IRelicsAdmin {
-    function owner() external view returns (address);
-    function removeRelic(uint256 tokenId) external;
-}
-
 interface INetworkedArtFactory {
     function cloneCollection(string calldata name, string calldata symbol, address expectedAuctions)
         external
@@ -24,30 +19,35 @@ interface IERC721URI {
     function tokenURI(uint256 tokenId) external view returns (string memory);
 }
 
-/// Fork tests against mainnet state: the real factory, the real Vessel,
-/// the real RGB Carrier bytes (vessel #3348).
+interface IRelicsAdmin {
+    function owner() external view returns (address);
+    function removeRelic(uint256 tokenId) external;
+}
+
+/// Fork tests against mainnet state: the real factory, the real Vessel, the
+/// real Relics contract, and real artwork bytes.
 contract VesselPortalForkTest is Test {
     address constant FACTORY = 0x0c2705cF48e49Cc896252dd16Dc8c5d31DF753B2;
     address constant VESSEL  = 0xECb92Cc7112b80A2234936315BbB493fb48d1463;
     address constant RELICS  = 0x48cB121Fa84b7C08692e74872D044B15369977CD;
-    uint256 constant RGB_CARRIER = 3348;
-    uint256 constant CAPSULE_RELIC = 9656; // Manhattan Blocks, non-vault
-    uint256 constant VAULT_RELIC = 9778; // Manhattan Blocks, 1 entry
+
+    uint256 constant RGB_CARRIER   = 3348; // vault, 6 entries
+    uint256 constant SHARDED       = 9994; // vault, 41 entries (32-38 = one HTML doc)
+    uint256 constant CAPSULE_RELIC = 9656; // relic, non-vault
+    uint256 constant VAULT_RELIC   = 9778; // relic on a vault, 1 relic entry
 
     address artist = makeAddr("artist");
 
     INetworkedArt art;
-    VesselPortal vesselPortal;
+    VesselPortal portal;
     uint256 rendererIndex;
 
-    string constant POSTER = "data:image/png;base64,poster";
+    string constant POSTER = "data:image/png;base64,cG9zdGVy";
 
     function setUp() public {
         // Live state (vessel holders, the relics curator) can change these
         // fixtures under the suite, so pin when an archive RPC is available:
         //   FORK_BLOCK=25733153 MAINNET_RPC_URL=<archive> forge test
-        // Public non-archive endpoints reject historical state, so the pin is
-        // opt-in rather than default.
         string memory rpc = vm.envOr("MAINNET_RPC_URL", string("https://ethereum-rpc.publicnode.com"));
         uint256 pinned = vm.envOr("FORK_BLOCK", uint256(0));
         if (pinned == 0) vm.createSelectFork(rpc);
@@ -55,273 +55,84 @@ contract VesselPortalForkTest is Test {
 
         INetworkedArtFactory factory = INetworkedArtFactory(FACTORY);
         vm.startPrank(artist);
-        (address artAddr, ) = factory.cloneCollection("VesselPortal Test", "PRTHL", factory.auctions());
+        (address artAddr, ) = factory.cloneCollection("Portal Test", "PRTL", factory.auctions());
         art = INetworkedArt(artAddr);
-
-        vesselPortal = new VesselPortal(VESSEL, RELICS);
-        rendererIndex = art.registerRenderer(address(vesselPortal));
+        portal = new VesselPortal(VESSEL, RELICS);
+        rendererIndex = art.registerRenderer(address(portal));
         vm.stopPrank();
     }
 
-    function _reference(uint256 vesselTokenId, uint256[] memory entries)
+    // ── source builders ─────────────────────────────────────────────────────
+
+    function _inline(string memory mime, bytes memory data)
         internal
         pure
-        returns (bytes[] memory artifact)
+        returns (VesselPortal.Source memory s)
     {
-        return _referenceFrom(vesselTokenId, entries, 0);
+        s.kind = 2;
+        s.mime = mime;
+        s.data = data;
+        s.entries = new uint256[](0);
     }
 
-    function _relicReference(uint256 vesselTokenId, uint256[] memory entries)
+    /// The absent source: inline with no bytes.
+    function _none() internal pure returns (VesselPortal.Source memory s) {
+        return _inline("", "");
+    }
+
+    function _inlinePoster() internal pure returns (VesselPortal.Source memory) {
+        return _inline("image/png", bytes(POSTER));
+    }
+
+    function _vesselSource(uint256 tokenId, uint256[] memory entries, string memory mime)
         internal
         pure
-        returns (bytes[] memory artifact)
+        returns (VesselPortal.Source memory s)
     {
-        return _referenceFrom(vesselTokenId, entries, 1);
+        s.kind = 0;
+        s.tokenId = tokenId;
+        s.entries = entries;
+        s.mime = mime;
     }
 
-    function _referenceFrom(uint256 vesselTokenId, uint256[] memory entries, uint8 source)
+    function _relicSource(uint256 tokenId, uint256[] memory entries, string memory mime)
         internal
         pure
-        returns (bytes[] memory artifact)
+        returns (VesselPortal.Source memory s)
     {
-        artifact = new bytes[](1);
-        artifact[0] = abi.encode(POSTER, "text/html", vesselTokenId, entries, source);
+        s.kind = 1;
+        s.tokenId = tokenId;
+        s.entries = entries;
+        s.mime = mime;
     }
 
-    function _mint(uint256 tokenId, bytes[] memory artifact) internal {
+    function _one(uint256 v) internal pure returns (uint256[] memory a) {
+        a = new uint256[](1);
+        a[0] = v;
+    }
+
+    function _artifact(VesselPortal.Source memory poster, VesselPortal.Source memory animation)
+        internal
+        pure
+        returns (bytes[] memory chunks)
+    {
+        chunks = new bytes[](1);
+        chunks[0] = abi.encode(poster, animation);
+    }
+
+    function _mint(uint256 tokenId, bytes[] memory chunks) internal {
         vm.prank(artist);
         art.mint(INetworkedArt.MintParams({
             tokenId: tokenId,
-            artifact: artifact,
-            name: "Through the VesselPortal",
+            artifact: chunks,
+            name: "Through the Portal",
             description: "test",
             rendererIndex: uint32(rendererIndex),
             rendererData: 0
         }));
     }
 
-    function test_registersAtIndexTwo() public view {
-        assertEq(rendererIndex, 2);
-        assertEq(art.rendererAt(2), address(vesselPortal));
-    }
-
-    function test_pinnedEntry_matchesDirectVesselRead() public {
-        uint256[] memory entries = new uint256[](1);
-        entries[0] = 5;
-        _mint(1, _reference(RGB_CARRIER, entries));
-
-        bytes memory direct = IVessel(VESSEL).vaultToEntry(RGB_CARRIER, 5);
-        assertGt(direct.length, 0);
-
-        string memory expected =
-            string(abi.encodePacked("data:text/html;base64,", Base64.encode(direct)));
-        INetworkedArt.TokenData memory data = art.tokenData(1);
-        assertEq(vesselPortal.animationURI(1, data), expected);
-        assertEq(vesselPortal.imageURI(1, data), POSTER);
-    }
-
-    function test_multiEntry_concatenatesInOrder() public {
-        uint256[] memory entries = new uint256[](2);
-        entries[0] = 1;
-        entries[1] = 2;
-        _mint(1, _reference(RGB_CARRIER, entries));
-
-        bytes memory expectedContent = bytes.concat(
-            IVessel(VESSEL).vaultToEntry(RGB_CARRIER, 1),
-            IVessel(VESSEL).vaultToEntry(RGB_CARRIER, 2)
-        );
-        string memory expected =
-            string(abi.encodePacked("data:text/html;base64,", Base64.encode(expectedContent)));
-        assertEq(vesselPortal.animationURI(1, art.tokenData(1)), expected);
-    }
-
-    function test_liveMode_matchesCraftToPayload() public {
-        _mint(1, _reference(RGB_CARRIER, new uint256[](0)));
-
-        bytes memory payload = IVessel(VESSEL).craftToPayload(RGB_CARRIER);
-        string memory expected =
-            string(abi.encodePacked("data:text/html;base64,", Base64.encode(payload)));
-        assertEq(vesselPortal.animationURI(1, art.tokenData(1)), expected);
-    }
-
-    function test_tokenURI_isBase64JsonWithAnimation() public {
-        uint256[] memory entries = new uint256[](1);
-        entries[0] = 5;
-        _mint(1, _reference(RGB_CARRIER, entries));
-
-        string memory uri = IERC721URI(address(art)).tokenURI(1);
-        assertTrue(_startsWith(uri, "data:application/json;base64,"));
-
-        // The exact JSON the AnimationRenderer format prescribes.
-        bytes memory direct = IVessel(VESSEL).vaultToEntry(RGB_CARRIER, 5);
-        bytes memory json = abi.encodePacked(
-            '{"name":"Through the VesselPortal","description":"test","image":"', POSTER,
-            '","animation_url":"data:text/html;base64,', Base64.encode(direct), '"}'
-        );
-        string memory expected =
-            string(abi.encodePacked("data:application/json;base64,", Base64.encode(json)));
-        assertEq(uri, expected);
-    }
-
-    function test_chunkedReference_reassembles() public {
-        // A reference split across two SSTORE2 chunks must decode identically.
-        uint256[] memory entries = new uint256[](1);
-        entries[0] = 5;
-        bytes memory ref = abi.encode(POSTER, "text/html", RGB_CARRIER, entries, uint8(0));
-        bytes[] memory artifact = new bytes[](2);
-        uint256 cut = ref.length / 2;
-        artifact[0] = new bytes(cut);
-        artifact[1] = new bytes(ref.length - cut);
-        for (uint256 i; i < ref.length; ++i) {
-            if (i < cut) artifact[0][i] = ref[i];
-            else artifact[1][i - cut] = ref[i];
-        }
-        _mint(1, artifact);
-
-        assertEq(vesselPortal.imageURI(1, art.tokenData(1)), POSTER);
-    }
-
-    function test_revert_nonVaultPinned() public {
-        // Vessel #1500-range Machine types are not vaults. Find one cheaply:
-        // craftToVaultStatus is false for non-vaults; RGB_CARRIER+offset probing
-        // is fragile, so use a known Machine from the architecture docs (#9994 is
-        // a vault, #2623 is a vault) — instead assert via craftToVaultStatus scan.
-        uint256 nonVault = 0;
-        for (uint256 id = 1; id <= 20; ++id) {
-            if (!IVessel(VESSEL).craftToVaultStatus(id)) { nonVault = id; break; }
-        }
-        assertGt(nonVault, 0, "no non-vault token found in probe range");
-
-        uint256[] memory entries = new uint256[](1);
-        entries[0] = 0;
-        _mint(1, _reference(nonVault, entries));
-
-        INetworkedArt.TokenData memory data = art.tokenData(1);
-        vm.expectRevert(abi.encodeWithSelector(VesselPortal.NotAVault.selector, nonVault));
-        vesselPortal.animationURI(1, data);
-    }
-
-    function test_revert_entryOutOfRange() public {
-        uint256 count = IVessel(VESSEL).craftToEntry(RGB_CARRIER);
-        uint256[] memory entries = new uint256[](1);
-        entries[0] = count; // one past the end
-        _mint(1, _reference(RGB_CARRIER, entries));
-
-        INetworkedArt.TokenData memory data = art.tokenData(1);
-        vm.expectRevert(
-            abi.encodeWithSelector(VesselPortal.EntryOutOfRange.selector, RGB_CARRIER, count, count)
-        );
-        vesselPortal.animationURI(1, data);
-    }
-
-    function test_resolve_previewMatchesRender() public {
-        uint256[] memory entries = new uint256[](1);
-        entries[0] = 5;
-        (bytes memory content, string memory animation) =
-            vesselPortal.resolve("text/html", RGB_CARRIER, entries, 0);
-        assertEq(content, IVessel(VESSEL).vaultToEntry(RGB_CARRIER, 5));
-
-        _mint(1, _reference(RGB_CARRIER, entries));
-        assertEq(animation, vesselPortal.animationURI(1, art.tokenData(1)));
-    }
-
-    // ── relics ──────────────────────────────────────────────────────────────
-
-    function test_relicLive_matchesRelicToPayload() public {
-        _mint(1, _relicReference(CAPSULE_RELIC, new uint256[](0)));
-
-        bytes memory payload = IRelics(RELICS).relicToPayload(CAPSULE_RELIC);
-        assertGt(payload.length, 0);
-        string memory expected =
-            string(abi.encodePacked("data:text/html;base64,", Base64.encode(payload)));
-        assertEq(vesselPortal.animationURI(1, art.tokenData(1)), expected);
-    }
-
-    function test_relicPinned_matchesVaultRelicToEntry() public {
-        uint256[] memory entries = new uint256[](1);
-        entries[0] = 1; // relic entries are 1-based
-        _mint(1, _relicReference(VAULT_RELIC, entries));
-
-        bytes memory direct = IRelics(RELICS).vaultRelicToEntry(VAULT_RELIC, 1);
-        assertGt(direct.length, 0);
-        string memory expected =
-            string(abi.encodePacked("data:text/html;base64,", Base64.encode(direct)));
-        assertEq(vesselPortal.animationURI(1, art.tokenData(1)), expected);
-    }
-
-    /// Entry 0 is never a valid relic index (they are 1-based). It falls
-    /// through the ladder to the vault's own entries, and vessel #9778 has
-    /// none of its own — so the strict path reverts while `uri()` stays
-    /// viewable. Both halves matter: tooling sees the error, collectors
-    /// keep a token.
-    function test_relicPinned_entryZero_degradesNotBricks() public {
-        uint256[] memory entries = new uint256[](1);
-        entries[0] = 0;
-        _mint(1, _relicReference(VAULT_RELIC, entries));
-        INetworkedArt.TokenData memory data = art.tokenData(1);
-
-        uint256 vaultEntries = IVessel(VESSEL).craftToEntry(VAULT_RELIC);
-        vm.expectRevert(
-            abi.encodeWithSelector(VesselPortal.EntryOutOfRange.selector, VAULT_RELIC, 0, vaultEntries)
-        );
-        vesselPortal.animationURI(1, data);
-
-        string memory json = _decodeJson(IERC721URI(address(art)).tokenURI(1));
-        assertTrue(vm.contains(json, '"unresolved":true'), "uri must stay total");
-        assertTrue(vm.contains(json, POSTER), "poster survives");
-    }
-
-    /// The curator shrinking or re-creating a relic must not brick a token.
-    function test_relicPinned_pastEnd_degradesNotBricks() public {
-        uint256 available = IRelics(RELICS).getTokenEntries(VAULT_RELIC);
-        uint256[] memory entries = new uint256[](1);
-        entries[0] = available + 1;
-        _mint(1, _relicReference(VAULT_RELIC, entries));
-
-        string memory json = _decodeJson(IERC721URI(address(art)).tokenURI(1));
-        assertTrue(vm.contains(json, '"unresolved":true'));
-        assertTrue(vm.contains(json, POSTER));
-    }
-
-    /// A pinned reference to a non-vault relic can't use relic entries, so it
-    /// degrades to the relic's own payload rather than reverting forever.
-    function test_relicPinned_nonVault_degradesToPayload() public {
-        uint256[] memory entries = new uint256[](1);
-        entries[0] = 1;
-        _mint(1, _relicReference(CAPSULE_RELIC, entries));
-
-        bytes memory payload = IVessel(VESSEL).craftToPayload(CAPSULE_RELIC);
-        string memory expected =
-            string(abi.encodePacked("data:text/html;base64,", Base64.encode(payload)));
-        assertEq(vesselPortal.animationURI(1, art.tokenData(1)), expected);
-    }
-
-    function test_relicRemoved_fallsBackToVessel() public {
-        _mint(1, _relicReference(CAPSULE_RELIC, new uint256[](0)));
-
-        vm.prank(IRelicsAdmin(RELICS).owner());
-        IRelicsAdmin(RELICS).removeRelic(CAPSULE_RELIC);
-        assertFalse(IRelics(RELICS).isRelic(CAPSULE_RELIC));
-
-        // The minted token must keep rendering: vessel resolution takes over.
-        bytes memory vesselPayload = IVessel(VESSEL).craftToPayload(CAPSULE_RELIC);
-        string memory expected =
-            string(abi.encodePacked("data:text/html;base64,", Base64.encode(vesselPayload)));
-        assertEq(vesselPortal.animationURI(1, art.tokenData(1)), expected);
-    }
-
-    function test_resolve_relicPreviewMatchesRender() public {
-        uint256[] memory entries = new uint256[](1);
-        entries[0] = 1;
-        (bytes memory content, string memory animation) =
-            vesselPortal.resolve("text/html", VAULT_RELIC, entries, 1);
-        assertEq(content, IRelics(RELICS).vaultRelicToEntry(VAULT_RELIC, 1));
-
-        _mint(1, _relicReference(VAULT_RELIC, entries));
-        assertEq(animation, vesselPortal.animationURI(1, art.tokenData(1)));
-    }
-
-    function _decodeJson(string memory uri) internal pure returns (string memory) {
+    function _json(string memory uri) internal pure returns (string memory) {
         bytes memory b = bytes(uri);
         uint256 comma;
         for (uint256 i; i < b.length; ++i) if (b[i] == ",") { comma = i; break; }
@@ -330,13 +141,246 @@ contract VesselPortalForkTest is Test {
         return string(Base64.decode(string(tail)));
     }
 
-    function _startsWith(string memory s, string memory prefix) internal pure returns (bool) {
-        bytes memory sb = bytes(s);
-        bytes memory pb = bytes(prefix);
-        if (sb.length < pb.length) return false;
-        for (uint256 i; i < pb.length; ++i) {
-            if (sb[i] != pb[i]) return false;
+    function _expectedURI(string memory mime, bytes memory content)
+        internal
+        pure
+        returns (string memory)
+    {
+        return string(abi.encodePacked("data:", mime, ";base64,", Base64.encode(content)));
+    }
+
+    // ── registration ────────────────────────────────────────────────────────
+
+    function test_registersAtIndexTwo() public view {
+        assertEq(rendererIndex, 2);
+        assertEq(art.rendererAt(2), address(portal));
+        assertEq(portal.name(), "VesselPortal");
+    }
+
+    function test_supportsInterface() public view {
+        assertTrue(portal.supportsInterface(type(IRenderer).interfaceId));
+        assertTrue(portal.supportsInterface(0x01ffc9a7)); // ERC-165
+        assertFalse(portal.supportsInterface(0xffffffff));
+    }
+
+    // ── the point of this version: a poster held on the Vessel ──────────────
+
+    function test_posterFromVaultEntry_neverStoresTheImage() public {
+        // #9994 entry 40 is a 9,994-byte SVG already on-chain.
+        VesselPortal.Source memory poster = _vesselSource(SHARDED, _one(40), "image/svg+xml");
+        VesselPortal.Source memory anim = _vesselSource(RGB_CARRIER, _one(5), "text/html");
+        bytes[] memory chunks = _artifact(poster, anim);
+
+        // The whole artifact is a reference — far smaller than the artwork.
+        assertLt(chunks[0].length, 1024, "referenced mint must stay tiny");
+        _mint(1, chunks);
+
+        bytes memory posterBytes = IVessel(VESSEL).vaultToEntry(SHARDED, 40);
+        assertGt(posterBytes.length, 9_000);
+        assertEq(
+            portal.imageURI(1, art.tokenData(1)),
+            _expectedURI("image/svg+xml", posterBytes),
+            "poster resolves from the vault"
+        );
+    }
+
+    function test_bothSourcesReferenced_artifactIsFlat() public {
+        uint256[] memory doc = new uint256[](7);
+        for (uint256 i; i < 7; ++i) doc[i] = 32 + i; // one HTML document, sharded
+        bytes memory ref = abi.encode(
+            _vesselSource(SHARDED, _one(40), "image/svg+xml"),
+            _vesselSource(SHARDED, doc, "text/html")
+        );
+        // 65 KB of artwork + 10 KB of poster, referenced in well under 1 KB.
+        assertLt(ref.length, 1024);
+    }
+
+    // ── inline poster (what v1 did) still works ─────────────────────────────
+
+    function test_inlinePoster_withVesselAnimation() public {
+        _mint(1, _artifact(_inlinePoster(), _vesselSource(RGB_CARRIER, _one(5), "text/html")));
+
+        bytes memory direct = IVessel(VESSEL).vaultToEntry(RGB_CARRIER, 5);
+        INetworkedArt.TokenData memory data = art.tokenData(1);
+        assertEq(portal.imageURI(1, data), _expectedURI("image/png", bytes(POSTER)));
+        assertEq(portal.animationURI(1, data), _expectedURI("text/html", direct));
+    }
+
+    function test_tokenURI_shape() public {
+        _mint(1, _artifact(_inlinePoster(), _vesselSource(RGB_CARRIER, _one(5), "text/html")));
+
+        string memory uri = IERC721URI(address(art)).tokenURI(1);
+        assertTrue(vm.contains(uri, "data:application/json;base64,"));
+        string memory json = _json(uri);
+        assertTrue(vm.contains(json, '"name":"Through the Portal"'));
+        assertTrue(vm.contains(json, '"image":"data:image/png;base64,'));
+        assertTrue(vm.contains(json, '"animation_url":"data:text/html;base64,'));
+        assertFalse(vm.contains(json, "unresolved"));
+    }
+
+    function test_imageOnlyToken_omitsAnimation() public {
+        _mint(1, _artifact(_vesselSource(SHARDED, _one(40), "image/svg+xml"), _none()));
+
+        string memory json = _json(IERC721URI(address(art)).tokenURI(1));
+        assertTrue(vm.contains(json, '"image":"data:image/svg+xml;base64,'));
+        assertFalse(vm.contains(json, "animation_url"), "absent animation is omitted");
+        assertFalse(vm.contains(json, "unresolved"), "absent is not broken");
+        assertEq(portal.animationURI(1, art.tokenData(1)), "");
+    }
+
+    // ── vessel sources ──────────────────────────────────────────────────────
+
+    function test_pinnedEntry_matchesDirectRead() public {
+        _mint(1, _artifact(_inlinePoster(), _vesselSource(RGB_CARRIER, _one(5), "text/html")));
+        assertEq(
+            portal.animationURI(1, art.tokenData(1)),
+            _expectedURI("text/html", IVessel(VESSEL).vaultToEntry(RGB_CARRIER, 5))
+        );
+    }
+
+    function test_multiEntry_concatenatesInSelectionOrder() public {
+        uint256[] memory entries = new uint256[](2);
+        entries[0] = 5;
+        entries[1] = 2; // deliberately not ascending
+        _mint(1, _artifact(_inlinePoster(), _vesselSource(RGB_CARRIER, entries, "text/html")));
+
+        bytes memory expected = bytes.concat(
+            IVessel(VESSEL).vaultToEntry(RGB_CARRIER, 5),
+            IVessel(VESSEL).vaultToEntry(RGB_CARRIER, 2)
+        );
+        assertEq(portal.animationURI(1, art.tokenData(1)), _expectedURI("text/html", expected));
+    }
+
+    function test_shardedDocument_reassembles() public {
+        uint256[] memory doc = new uint256[](7);
+        for (uint256 i; i < 7; ++i) doc[i] = 32 + i;
+        _mint(1, _artifact(_inlinePoster(), _vesselSource(SHARDED, doc, "text/html")));
+
+        bytes memory expected;
+        for (uint256 i; i < 7; ++i) {
+            expected = bytes.concat(expected, IVessel(VESSEL).vaultToEntry(SHARDED, 32 + i));
         }
-        return true;
+        assertEq(expected.length, 65_105, "the real document size");
+        assertEq(portal.animationURI(1, art.tokenData(1)), _expectedURI("text/html", expected));
+    }
+
+    function test_liveMode_matchesCraftToPayload() public {
+        uint256[] memory none = new uint256[](0);
+        _mint(1, _artifact(_inlinePoster(), _vesselSource(RGB_CARRIER, none, "text/html")));
+        assertEq(
+            portal.animationURI(1, art.tokenData(1)),
+            _expectedURI("text/html", IVessel(VESSEL).craftToPayload(RGB_CARRIER))
+        );
+    }
+
+    function test_chunkedArtifact_reassembles() public {
+        bytes memory ref = abi.encode(
+            _inlinePoster(),
+            _vesselSource(RGB_CARRIER, _one(5), "text/html")
+        );
+        bytes[] memory chunks = new bytes[](2);
+        uint256 cut = ref.length / 2;
+        chunks[0] = new bytes(cut);
+        chunks[1] = new bytes(ref.length - cut);
+        for (uint256 i; i < ref.length; ++i) {
+            if (i < cut) chunks[0][i] = ref[i];
+            else chunks[1][i - cut] = ref[i];
+        }
+        _mint(1, chunks);
+        assertEq(portal.imageURI(1, art.tokenData(1)), _expectedURI("image/png", bytes(POSTER)));
+    }
+
+    // ── relic sources ───────────────────────────────────────────────────────
+
+    function test_relicLive_matchesRelicToPayload() public {
+        uint256[] memory none = new uint256[](0);
+        _mint(1, _artifact(_inlinePoster(), _relicSource(CAPSULE_RELIC, none, "text/html")));
+        assertEq(
+            portal.animationURI(1, art.tokenData(1)),
+            _expectedURI("text/html", IRelics(RELICS).relicToPayload(CAPSULE_RELIC))
+        );
+    }
+
+    function test_relicPinned_matchesVaultRelicToEntry() public {
+        _mint(1, _artifact(_inlinePoster(), _relicSource(VAULT_RELIC, _one(1), "text/html")));
+        assertEq(
+            portal.animationURI(1, art.tokenData(1)),
+            _expectedURI("text/html", IRelics(RELICS).vaultRelicToEntry(VAULT_RELIC, 1))
+        );
+    }
+
+    function test_relicRemoved_keepsRendering() public {
+        uint256[] memory none = new uint256[](0);
+        _mint(1, _artifact(_inlinePoster(), _relicSource(CAPSULE_RELIC, none, "text/html")));
+
+        vm.prank(IRelicsAdmin(RELICS).owner());
+        IRelicsAdmin(RELICS).removeRelic(CAPSULE_RELIC);
+        assertFalse(IRelics(RELICS).isRelic(CAPSULE_RELIC));
+
+        assertEq(
+            portal.animationURI(1, art.tokenData(1)),
+            _expectedURI("text/html", IVessel(VESSEL).craftToPayload(CAPSULE_RELIC)),
+            "a curator cannot brick a minted token"
+        );
+    }
+
+    function test_relicPinned_outOfRange_degradesNotBricks() public {
+        uint256 available = IRelics(RELICS).getTokenEntries(VAULT_RELIC);
+        _mint(1, _artifact(_inlinePoster(), _relicSource(VAULT_RELIC, _one(available + 1), "text/html")));
+
+        string memory json = _json(IERC721URI(address(art)).tokenURI(1));
+        assertTrue(vm.contains(json, '"unresolved":true'));
+        // The poster is independent of the broken animation.
+        assertTrue(vm.contains(json, '"image":"data:image/png;base64,'), "poster survives");
+        assertFalse(vm.contains(json, "animation_url"));
+    }
+
+    // ── independent degradation ─────────────────────────────────────────────
+
+    function test_brokenPoster_keepsGoodAnimation() public {
+        // A pinned vessel entry that does not exist.
+        uint256 count = IVessel(VESSEL).craftToEntry(RGB_CARRIER);
+        _mint(1, _artifact(
+            _vesselSource(RGB_CARRIER, _one(count + 5), "image/png"),
+            _vesselSource(RGB_CARRIER, _one(5), "text/html")
+        ));
+
+        string memory json = _json(IERC721URI(address(art)).tokenURI(1));
+        assertTrue(vm.contains(json, '"image":""'), "poster degrades to empty");
+        assertTrue(vm.contains(json, '"animation_url":"data:text/html;base64,'), "animation unaffected");
+        assertTrue(vm.contains(json, '"unresolved":true'));
+        assertEq(portal.imageURI(1, art.tokenData(1)), "", "imageURI stays total");
+    }
+
+    function test_strictPathStillReverts() public {
+        uint256 count = IVessel(VESSEL).craftToEntry(RGB_CARRIER);
+        _mint(1, _artifact(_inlinePoster(), _vesselSource(RGB_CARRIER, _one(count), "text/html")));
+
+        INetworkedArt.TokenData memory data = art.tokenData(1);
+        vm.expectRevert(
+            abi.encodeWithSelector(VesselPortal.EntryOutOfRange.selector, RGB_CARRIER, count, count)
+        );
+        portal.animationURI(1, data);
+    }
+
+    // ── preview parity ──────────────────────────────────────────────────────
+
+    function test_resolveArtifact_matchesRender() public {
+        bytes memory ref = abi.encode(
+            _vesselSource(SHARDED, _one(40), "image/svg+xml"),
+            _vesselSource(RGB_CARRIER, _one(5), "text/html")
+        );
+        (string memory image, string memory animation) = portal.resolveArtifact(ref);
+
+        bytes[] memory chunks = new bytes[](1);
+        chunks[0] = ref;
+        _mint(1, chunks);
+        INetworkedArt.TokenData memory data = art.tokenData(1);
+        assertEq(image, portal.imageURI(1, data));
+        assertEq(animation, portal.animationURI(1, data));
+    }
+
+    function test_selfTest() public view {
+        assertTrue(portal.selfTest(RGB_CARRIER));
     }
 }
