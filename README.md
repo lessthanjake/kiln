@@ -51,7 +51,7 @@ a per-token renderer:
 |---|---|---|
 | Default | 0 | a plain image URI string |
 | Animation | 1 | `abi.encode(string imageURI, string animationURI)` |
-| **VesselPortal** (this repo) | registered per collection | `abi.encode(string image, string mime, uint256 vesselTokenId, uint256[] entries)` |
+| **VesselPortal** (this repo) | registered per collection | `abi.encode(Source poster, Source animation)` |
 
 Kiln picks the flow automatically:
 
@@ -61,7 +61,7 @@ Kiln picks the flow automatically:
   transactions, then a final mint with an empty artifact (progress is saved in
   localStorage and resumable)
 - **vessel reference** → one-time `VesselPortal` deploy + `registerRenderer`,
-  then each mint stores only a ~400-byte reference
+  then each mint stores only a reference — under 1 KB however large the work
 
 Auction params are computed at click time (`expiresAt = now + duration`) and
 `expectedAuctions` is read live, so nothing goes stale between form-fill and
@@ -72,55 +72,62 @@ Chainlink feed with a small buffer; the contract refunds the excess.
 
 `contracts/src/VesselPortal.sol` — a networked.art `IRenderer` that reads
 The Vessel (`0xECb92Cc7112b80A2234936315BbB493fb48d1463`) and its Relics
-contract (`0x48cB121Fa84b7C08692e74872D044B15369977CD`) at view time. The
-reference carries a `source` byte: 0 = vessel, 1 = relics.
+contract (`0x48cB121Fa84b7C08692e74872D044B15369977CD`) at view time.
 
-Source 0 — the vessel:
+A token is two `Source`s — a poster and an animation — resolved the same way:
 
-- **pinned mode** (`entries` non-empty): concatenates immutable
-  `vaultToEntry` entries (0-based) into one document. Vault entries can never
-  be edited or removed, so a pinned token can never change or break.
-- **live mode** (`entries` empty): serves whatever `craftToPayload` returns
-  now — follows relic overrides, machine delegation, and the holder's chosen
-  entry. Mutable by design.
+```solidity
+struct Source {
+    uint8      kind;     // 0 = vessel, 1 = relics, 2 = inline
+    uint256    tokenId;  // vessel/relic id; ignored when inline
+    uint256[]  entries;  // pinned entries; empty = that source's live payload
+    string     mime;     // content type for the assembled data URI
+    bytes      data;     // only when kind == 2; empty = source absent
+}
+```
 
-Source 1 — relics (curated overrides; audio, images, text):
+- **kind 0, pinned** (`entries` non-empty, 0-based): concatenates immutable
+  vault entries in the order given. Entries are append-only on an immutable
+  contract whose type permutation is seed-locked, so a pinned source cannot be
+  changed by anyone, ever. **Entry order is document order**, so a work sharded
+  across slots reassembles exactly as you pick it — Kiln's "assemble mode".
+- **kind 0, live** (`entries` empty): whatever `craftToPayload` returns now —
+  the vessel *holder's* chosen entry, machine delegation, relic overrides. The
+  holder need not be the collector.
+- **kind 1, relics**: pinned relic entries are **1-based**, vault-relics only,
+  and the bytes stay curator-editable — this pins the index, not the content. A
+  removed or shrunk relic degrades to the vault's own entries, then to the live
+  payload, never to a dead token.
+- **kind 2, inline**: raw bytes carried in the artifact. Not a data URI — the
+  renderer builds that from `data` + `mime`. Empty `data` means absent, which is
+  how an image-only token omits its animation.
 
-- **pinned relic entries** are **1-based** (the Relics contract's own
-  numbering) and vault-relics only. Relic bytes stay curator-editable, so
-  this pins the entry index, not its content.
-- **live** (`entries` empty) follows `relicToPayload` — machine output,
-  capsule data, or the holder's chosen relic entry.
-- **a removed relic cannot brick a minted token**: both forms fall back to
-  the vessel's own `craftToPayload`.
+Because either half can be a reference, **a poster already on-chain costs ~100
+bytes instead of its full size**. A fully referenced mint measured **896 bytes
+of artifact serving 75,099 bytes of art**.
 
-Either source:
+Metadata carries `"mutable":true` when any source resolves through a path a
+third party can change, so front-ends can badge or sandbox rather than trusting
+a docstring. Poster and animation **share** a 128 KB content budget, because
+`uri()` puts both in one document and gas tracks their sum.
 
-- **the content type is part of the minted reference and cannot change.** A
-  live-mode token serves every future payload under the mime set at mint, so
-  keep a rotating vault within one medium.
-- **entry order is document order.** `entries` is concatenated in array order,
-  so a work sharded across several vault slots reassembles exactly as you pick
-  them. Kiln defaults to single-select (one entry, one document) and offers
-  "assemble mode" for ordered multi-entry references.
-
-Because SVG is XML and vault slots are fixed-size, an SVG padded with NUL
-bytes past its closing tag renders as *"extra content at the end of the
-document"* rather than as artwork; whitespace padding is legal. Kiln checks
-the actual bytes and warns before minting, and warns again if an assembly
-would put two `<svg>` roots in one document. Kiln auto-suggests the mime from
-  the referenced bytes (html, svg, png, mp3, text).
+Because SVG is XML and vault slots are fixed-size, an SVG padded with NUL bytes
+past its closing tag renders as *"extra content at the end of the document"*
+rather than as artwork; whitespace padding is legal. Kiln checks the actual
+bytes and warns before minting, and warns again if an assembly would put two
+`<svg>` roots in one document. It also suggests the mime from the referenced
+bytes (html, svg, png, mp3, text).
 
 **`uri()` can never revert.** Registration is append-only and a token's
 renderer index is fixed at mint, so a renderer that can fail is a renderer that
-can brick a collector's token forever. When a reference cannot be resolved —
-malformed bytes, a hostile machine contract, a curator shrinking a relic — the
-token renders its poster with `"unresolved":true` instead of failing.
-`animationURI`/`resolve*` stay strict so minting tools fail loudly first.
+can brick a collector's token forever. Poster and animation degrade
+independently, marked `"unresolved":true`. `animationURI`/`resolve*` stay strict
+so minting tools fail loudly first.
 
-The contract is immutable, ownerless and stateless. It was adversarially
-reviewed before deployment; see [contracts/AUDIT.md](contracts/AUDIT.md) for
-findings, fixes, measured gas, and the limits that remain.
+The contract is immutable, ownerless and stateless. Two independent adversarial
+reviews before deployment found 13 issues, two measured in the billions of gas;
+see [contracts/AUDIT.md](contracts/AUDIT.md) for findings, fixes, measured gas,
+and the limits that remain.
 
 **Ownership courtesy.** The contract would let anyone reference anyone's
 vessel; Kiln deliberately won't. Once a wallet is connected the app sweeps
@@ -161,9 +168,9 @@ unavoidable, since each collection keeps its own renderer registry.
 - storing bytes: ~216 gas/byte + ~32k per 24.6 KB chunk. Base64 in a data URI
   inflates source files by 4/3.
 - a minimal upload mint with new collection + auction: ~1.27M gas
-- a VesselPortal reference mint into an existing collection: ~354k gas, flat,
-  regardless of artwork size
-- one-time VesselPortal deploy ~1.1M gas, register ~85k gas
+- a VesselPortal mint: ~380k gas with an uploaded poster, ~406k with both
+  poster and artwork referenced — flat, regardless of how large the work is
+- one-time VesselPortal deploy ~1.4M gas, register ~85k gas per collection
 
 ## Layout
 
