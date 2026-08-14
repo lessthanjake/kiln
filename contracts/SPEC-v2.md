@@ -68,11 +68,19 @@ abi.encode(Source poster, Source animation)
   the artwork picker. Mint cost display becomes near-constant for reference
   mints, which is the visible payoff.
 
+### Housekeeping to ride along
+
+- ERC-165 `supportsInterface` (audit finding 16: some tooling expects it;
+  costless in a fresh contract).
+- `version()` returns 2; `name()` stays "VesselPortal" — Kiln's detection
+  keys on the name and should learn to prefer the highest version registered.
+
 ### Open question
 
-Whether to also let `rendererData` (the unused `uint128` on every token) carry
-the poster's entry index, saving ~60 bytes. Probably not worth the encoding
-special-case, but it is free storage already paid for.
+What `rendererData` (the unused `uint128` on every token) is *for* — a seed,
+a poster entry index, or deliberately nothing. Decide with a paragraph in the
+contract's natspec rather than by accident; it is free storage every token has
+already paid for, and v1 ignoring it was a default, not a choice.
 
 ---
 
