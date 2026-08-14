@@ -53,9 +53,9 @@ GOT_RELICS=$(cast call "$ADDR" "relics()(address)" --rpc-url "$RPC")
 [[ "$(lower "$GOT_RELICS")" == "$(lower "$RELICS")" ]] || fail "relics() is $GOT_RELICS, expected $RELICS"
 ok "wired to THE_VESSEL and Relics"
 
-# Render a known-good reference end to end: proves the deployment can actually
+# Render a known-good read end to end: proves the deployment can actually
 # read live vault data, not merely that it exists.
-if cast call "$ADDR" "selfTest(uint256)(bool)" 3348 --rpc-url "$RPC" | grep -q true; then
+if cast call "$ADDR" "selfTest(uint256)(bool)" 2623 --rpc-url "$RPC" | grep -q true; then
   ok "selfTest reads live vessel data"
 else
   echo "  ! selfTest returned false — check the Vessel is reachable via $RPC" >&2

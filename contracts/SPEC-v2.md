@@ -28,8 +28,7 @@ an artist pays real storage for. Measured at 0.060 gwei:
 
 Meanwhile seven vessel entry indices pointing at a 65 KB artwork cost ~224
 bytes. The artwork is free and the thumbnail is what you buy — backwards, and
-worse when a perfectly good poster already exists on-chain (vessel #9994 entry
-40 is a 9,994-byte SVG that v1 forces you to re-upload and re-pay for).
+worse when a perfectly good poster already exists on-chain (a vault entry holding a 10 KB SVG must otherwise be re-uploaded and re-paid for).
 
 ### Design
 

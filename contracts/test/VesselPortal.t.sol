@@ -31,10 +31,15 @@ contract VesselPortalForkTest is Test {
     address constant VESSEL  = 0xECb92Cc7112b80A2234936315BbB493fb48d1463;
     address constant RELICS  = 0x48cB121Fa84b7C08692e74872D044B15369977CD;
 
-    uint256 constant RGB_CARRIER   = 3348; // vault, 6 entries
-    uint256 constant SHARDED       = 9994; // vault, 41 entries (32-38 = one HTML doc)
-    uint256 constant CAPSULE_RELIC = 9656; // relic, non-vault
-    uint256 constant VAULT_RELIC   = 9778; // relic on a vault, 1 relic entry
+    // Public on-chain fixtures held by several different collectors, chosen
+    // for the shapes they exercise rather than for who owns them. Any vault
+    // with enough entries substitutes; nothing here is special to the
+    // renderer.
+    uint256 constant VAULT         = 2623; // 156 entries, ~2.6 KB each
+    uint256 constant MULTI_VAULT   = 8615; // 7 entries, ~8.6 KB each
+    uint256 constant SHARDED       = 9994; // 41 entries; 32-38 are one HTML document
+    uint256 constant CAPSULE_RELIC = 9656; // curated relic (unclaimed), non-vault
+    uint256 constant VAULT_RELIC   = 9778; // curated relic (unclaimed) on a vault
 
     address artist = makeAddr("artist");
 
@@ -168,7 +173,7 @@ contract VesselPortalForkTest is Test {
     function test_posterFromVaultEntry_neverStoresTheImage() public {
         // #9994 entry 40 is a 9,994-byte SVG already on-chain.
         VesselPortal.Source memory poster = _vesselSource(SHARDED, _one(40), "image/svg+xml");
-        VesselPortal.Source memory anim = _vesselSource(RGB_CARRIER, _one(5), "text/html");
+        VesselPortal.Source memory anim = _vesselSource(VAULT, _one(5), "text/html");
         bytes[] memory chunks = _artifact(poster, anim);
 
         // The whole artifact is a reference — far smaller than the artwork.
@@ -198,16 +203,16 @@ contract VesselPortalForkTest is Test {
     // ── inline poster (what v1 did) still works ─────────────────────────────
 
     function test_inlinePoster_withVesselAnimation() public {
-        _mint(1, _artifact(_inlinePoster(), _vesselSource(RGB_CARRIER, _one(5), "text/html")));
+        _mint(1, _artifact(_inlinePoster(), _vesselSource(VAULT, _one(5), "text/html")));
 
-        bytes memory direct = IVessel(VESSEL).vaultToEntry(RGB_CARRIER, 5);
+        bytes memory direct = IVessel(VESSEL).vaultToEntry(VAULT, 5);
         INetworkedArt.TokenData memory data = art.tokenData(1);
         assertEq(portal.imageURI(1, data), _expectedURI("image/png", bytes(POSTER)));
         assertEq(portal.animationURI(1, data), _expectedURI("text/html", direct));
     }
 
     function test_tokenURI_shape() public {
-        _mint(1, _artifact(_inlinePoster(), _vesselSource(RGB_CARRIER, _one(5), "text/html")));
+        _mint(1, _artifact(_inlinePoster(), _vesselSource(VAULT, _one(5), "text/html")));
 
         string memory uri = IERC721URI(address(art)).tokenURI(1);
         assertTrue(vm.contains(uri, "data:application/json;base64,"));
@@ -231,10 +236,10 @@ contract VesselPortalForkTest is Test {
     // ── vessel sources ──────────────────────────────────────────────────────
 
     function test_pinnedEntry_matchesDirectRead() public {
-        _mint(1, _artifact(_inlinePoster(), _vesselSource(RGB_CARRIER, _one(5), "text/html")));
+        _mint(1, _artifact(_inlinePoster(), _vesselSource(VAULT, _one(5), "text/html")));
         assertEq(
             portal.animationURI(1, art.tokenData(1)),
-            _expectedURI("text/html", IVessel(VESSEL).vaultToEntry(RGB_CARRIER, 5))
+            _expectedURI("text/html", IVessel(VESSEL).vaultToEntry(VAULT, 5))
         );
     }
 
@@ -242,11 +247,11 @@ contract VesselPortalForkTest is Test {
         uint256[] memory entries = new uint256[](2);
         entries[0] = 5;
         entries[1] = 2; // deliberately not ascending
-        _mint(1, _artifact(_inlinePoster(), _vesselSource(RGB_CARRIER, entries, "text/html")));
+        _mint(1, _artifact(_inlinePoster(), _vesselSource(VAULT, entries, "text/html")));
 
         bytes memory expected = bytes.concat(
-            IVessel(VESSEL).vaultToEntry(RGB_CARRIER, 5),
-            IVessel(VESSEL).vaultToEntry(RGB_CARRIER, 2)
+            IVessel(VESSEL).vaultToEntry(VAULT, 5),
+            IVessel(VESSEL).vaultToEntry(VAULT, 2)
         );
         assertEq(portal.animationURI(1, art.tokenData(1)), _expectedURI("text/html", expected));
     }
@@ -266,17 +271,17 @@ contract VesselPortalForkTest is Test {
 
     function test_liveMode_matchesCraftToPayload() public {
         uint256[] memory none = new uint256[](0);
-        _mint(1, _artifact(_inlinePoster(), _vesselSource(RGB_CARRIER, none, "text/html")));
+        _mint(1, _artifact(_inlinePoster(), _vesselSource(VAULT, none, "text/html")));
         assertEq(
             portal.animationURI(1, art.tokenData(1)),
-            _expectedURI("text/html", IVessel(VESSEL).craftToPayload(RGB_CARRIER))
+            _expectedURI("text/html", IVessel(VESSEL).craftToPayload(VAULT))
         );
     }
 
     function test_chunkedArtifact_reassembles() public {
         bytes memory ref = abi.encode(
             _inlinePoster(),
-            _vesselSource(RGB_CARRIER, _one(5), "text/html")
+            _vesselSource(VAULT, _one(5), "text/html")
         );
         bytes[] memory chunks = new bytes[](2);
         uint256 cut = ref.length / 2;
@@ -339,10 +344,10 @@ contract VesselPortalForkTest is Test {
 
     function test_brokenPoster_keepsGoodAnimation() public {
         // A pinned vessel entry that does not exist.
-        uint256 count = IVessel(VESSEL).craftToEntry(RGB_CARRIER);
+        uint256 count = IVessel(VESSEL).craftToEntry(VAULT);
         _mint(1, _artifact(
-            _vesselSource(RGB_CARRIER, _one(count + 5), "image/png"),
-            _vesselSource(RGB_CARRIER, _one(5), "text/html")
+            _vesselSource(VAULT, _one(count + 5), "image/png"),
+            _vesselSource(VAULT, _one(5), "text/html")
         ));
 
         string memory json = _json(IERC721URI(address(art)).tokenURI(1));
@@ -353,12 +358,12 @@ contract VesselPortalForkTest is Test {
     }
 
     function test_strictPathStillReverts() public {
-        uint256 count = IVessel(VESSEL).craftToEntry(RGB_CARRIER);
-        _mint(1, _artifact(_inlinePoster(), _vesselSource(RGB_CARRIER, _one(count), "text/html")));
+        uint256 count = IVessel(VESSEL).craftToEntry(VAULT);
+        _mint(1, _artifact(_inlinePoster(), _vesselSource(VAULT, _one(count), "text/html")));
 
         INetworkedArt.TokenData memory data = art.tokenData(1);
         vm.expectRevert(
-            abi.encodeWithSelector(VesselPortal.EntryOutOfRange.selector, RGB_CARRIER, count, count)
+            abi.encodeWithSelector(VesselPortal.EntryOutOfRange.selector, VAULT, count, count)
         );
         portal.animationURI(1, data);
     }
@@ -368,7 +373,7 @@ contract VesselPortalForkTest is Test {
     function test_resolveArtifact_matchesRender() public {
         bytes memory ref = abi.encode(
             _vesselSource(SHARDED, _one(40), "image/svg+xml"),
-            _vesselSource(RGB_CARRIER, _one(5), "text/html")
+            _vesselSource(VAULT, _one(5), "text/html")
         );
         (string memory image, string memory animation) = portal.resolveArtifact(ref);
 
@@ -381,6 +386,6 @@ contract VesselPortalForkTest is Test {
     }
 
     function test_selfTest() public view {
-        assertTrue(portal.selfTest(RGB_CARRIER));
+        assertTrue(portal.selfTest(VAULT));
     }
 }

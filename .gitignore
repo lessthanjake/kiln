@@ -9,3 +9,7 @@ contracts/broadcast/
 .DS_Store
 .gstack/
 contracts/lib/forge-std/
+
+# generated but committed — see VERCEL.md
+!src/vesselPortalArtifact.js
+.vercel/

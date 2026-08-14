@@ -121,8 +121,7 @@ the strongest signal in the set.
 58 tests, all passing:
 
 - `VesselPortal.t.sol` (20) — mainnet fork against real Vessel and Relics data,
-  including a vault-hosted poster (#9994 entry 40), the sharded 65,105-byte
-  document (#9994 entries 32–38), relic sources, independent degradation, and a
+  including a vault-hosted poster, a document sharded across seven vault entries, relic sources, independent degradation, and a
   test that pranks the relics owner into removing a relic to prove a minted
   token survives it.
 - `VesselPortalHardening.t.sol` (31) — mock-based adversarial suite: hostile

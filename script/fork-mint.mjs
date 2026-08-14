@@ -146,7 +146,7 @@ const registered = await pub.readContract({ ...collection, functionName: 'render
 assert(registered.toLowerCase() === portalAddr.toLowerCase(), `registered at renderer index ${portalIndex}`)
 
 const vessel = { address: ADDRESSES.vessel, abi: vesselAbi }
-const entry5 = await pub.readContract({ ...vessel, functionName: 'vaultToEntry', args: [3348n, 5n] })
+const entry5 = await pub.readContract({ ...vessel, functionName: 'vaultToEntry', args: [2623n, 5n] })
 
 const mintReference = async (tokenId, name, artifactBytes) => {
   const params = {
@@ -167,13 +167,13 @@ const readMeta = async (tokenId) => {
 
 const { bytes: ref2 } = buildArtifact({
   poster: inlineSource({ bytes: posterPng, mime: 'image/png' }),
-  animation: referenceSource({ kind: KIND.vessel, vesselTokenId: 3348n, entries: [5n], mime: 'text/html' }),
+  animation: referenceSource({ kind: KIND.vessel, vesselTokenId: 2623n, entries: [5n], mime: 'text/html' }),
 })
 const receipt2 = await mintReference(2n, 'inline poster', ref2)
 const meta2 = await readMeta(2n)
 assert(
   bytesToHex(base64Decode(meta2.animation_url.split(',')[1])) === entry5,
-  'animation equals vaultToEntry(3348, 5) byte for byte',
+  'animation equals vaultToEntry(2623, 5) byte for byte',
 )
 assert(meta2.image === toDataURI(posterPng, 'image/png'), 'inline poster round-trips')
 assert(!meta2.mutable, 'pinned sources are not marked mutable')

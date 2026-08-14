@@ -15,7 +15,7 @@ import {
   usdToWei, costFromGas, planFlow, auctionExpiry,
 } from './kiln.js'
 import { factoryAbi, collectionAbi, auctionsAbi, chainlinkAbi, vesselAbi, relicsAbi } from './abi.js'
-import vesselPortalArtifact from '../contracts/out/VesselPortal.sol/VesselPortal.json'
+import vesselPortalArtifact from './vesselPortalArtifact.js'
 
 const $ = (id) => document.getElementById(id)
 const VESSELPORTAL_KEY = 'kiln.vesselPortal'

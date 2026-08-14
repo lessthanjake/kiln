@@ -1,10 +1,12 @@
 {
   "name": "kiln",
   "version": "0.1.0",
-  "description": "Mint fully on-chain works on networked.art — assets in SSTORE2, or referenced from The Vessel via the Porthole renderer.",
+  "description": "Mint fully on-chain 1/1s on networked.art \u2014 assets in SSTORE2, or referenced from The Vessel via the VesselPortal renderer.",
   "type": "module",
   "private": true,
   "scripts": {
+    "sync-artifact": "node script/sync-artifact.mjs",
+    "check-artifact": "node script/sync-artifact.mjs --check",
     "build": "esbuild src/app.js --bundle --format=esm --outfile=dist/app.js && cp index.html dist/index.html",
     "test": "node --test 'test/**/*.test.js'",
     "serve": "npx serve dist -l 8788",
