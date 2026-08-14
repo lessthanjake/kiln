@@ -136,19 +136,16 @@ abi.encode(Source poster, string[] files, bytes params)
 
 ### Composition with §1
 
-`Source` is reusable here — a sketch could come from a *vessel vault entry*
-while the library comes from EthFS. That collapses the two contracts into one
-renderer with three source kinds plus an EthFS kind, which may be the right
-shape. Decide before building: one renderer with four kinds is simpler to
-register and audit than two contracts, but a larger blast radius per bug.
-
-**Decision input (2026-08-14): lean unified.** A confirmed want exists for an
-EthFS-sourced *poster* (a thumbnail already stored as an EthFS file), which
-only the unified shape serves — in the two-contract split, the EthFS renderer
-has no poster-by-reference and VesselPortal v2 has no EthFS kind. Four kinds
-for both poster and animation covers every combination anyone has asked for.
-v1 cannot help here: its sources are constructor-immutable, vessel and relics
-only, and its poster is inline-only.
+**Decided (2026-08-14): two contracts, split by domain.** VesselPortal is a
+portal into the Vessel and stays that way — its `Source` kinds are vessel,
+relics, and inline, for both poster and animation. No EthFS kind, ever; the
+name is the scope. The EthFS renderer is its own contract with its own name,
+and *its* poster-by-reference reads EthFS files, so an EthFS-stored thumbnail
+is served by the renderer whose world it lives in. The `Source` struct shape
+is shared between the two codebases; the registries of readable contracts are
+not. Cost of the split: a piece cannot mix a vessel-sourced animation with an
+EthFS-sourced poster in one token. Accepted — each renderer stays small,
+legible, and auditable as one idea.
 
 ---
 
