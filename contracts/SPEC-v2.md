@@ -142,6 +142,14 @@ renderer with three source kinds plus an EthFS kind, which may be the right
 shape. Decide before building: one renderer with four kinds is simpler to
 register and audit than two contracts, but a larger blast radius per bug.
 
+**Decision input (2026-08-14): lean unified.** A confirmed want exists for an
+EthFS-sourced *poster* (a thumbnail already stored as an EthFS file), which
+only the unified shape serves — in the two-contract split, the EthFS renderer
+has no poster-by-reference and VesselPortal v2 has no EthFS kind. Four kinds
+for both poster and animation covers every combination anyone has asked for.
+v1 cannot help here: its sources are constructor-immutable, vessel and relics
+only, and its poster is inline-only.
+
 ---
 
 ## Build order
