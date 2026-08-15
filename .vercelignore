@@ -1,0 +1,21 @@
+# Vercel installs dependencies itself and builds from source; everything below
+# is either regenerated there or irrelevant to a static bundle. Without this
+# the CLI uploads ~670 MB and hits the 100 MB file limit.
+node_modules
+dist
+.git
+
+# Solidity toolchain output — the deploy has no forge, and the bytecode the app
+# needs is committed as src/vesselPortalArtifact.js instead (see VERCEL.md).
+contracts/out
+contracts/cache
+contracts/lib
+contracts/broadcast
+
+assets
+*.log
+.DS_Store
+
+# browse-daemon logs from local QA — 600+ MB of console spew
+.gstack
+.vercel

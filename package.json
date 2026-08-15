@@ -10,7 +10,8 @@
     "build": "esbuild src/app.js --bundle --format=esm --outfile=dist/app.js && cp index.html dist/index.html",
     "test": "node --test 'test/**/*.test.js'",
     "serve": "npx serve dist -l 8788",
-    "rehearse": "node script/fork-mint.mjs"
+    "rehearse": "node script/fork-mint.mjs",
+    "deploy": "vercel deploy --prod --yes"
   },
   "devDependencies": {
     "esbuild": "^0.25.0",

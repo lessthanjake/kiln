@@ -3,9 +3,15 @@
 Kiln is a static bundle: `npm run build` emits `dist/`, and nothing runs
 server-side. Any static host works; Vercel is configured here.
 
-    vercel link      # once, to associate the directory with a project
-    vercel deploy    # preview
-    vercel deploy --prod
+    npm run deploy   # vercel deploy --prod --yes
+
+Live at https://kiln-murex.vercel.app. The GitHub repo is connected, so
+pushes to `main` redeploy automatically; the command above is for deploying
+without a push.
+
+`.vercelignore` matters here: without it the CLI uploads ~670 MB (node_modules,
+the Foundry build output, and local QA logs) and dies on the 100 MB file limit.
+With it the upload is ~0.3 MB.
 
 `vercel.json` sets `buildCommand` to `npm run check-artifact && npm run build`,
 so a deploy fails loudly if `src/vesselPortalArtifact.js` is stale rather than
