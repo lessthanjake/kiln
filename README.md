@@ -17,10 +17,15 @@ npm run build       # bundles the app into dist/
 npm run serve       # http://localhost:8788 — open in your wallet browser
 ```
 
-The whole app is client-side, so a local copy and a hosted one behave
-identically — run it either way. Hosting notes, including how to deploy to
-Vercel and why the contract artifact is committed, are in
-[VERCEL.md](VERCEL.md).
+**Running it locally is the recommended way to use it.** The app signs real
+transactions, and a hosted frontend is the part of this that an attacker could
+plausibly tamper with — the contracts can't take your assets, but a swapped
+build can ask you to sign something you didn't mean. Locally you are running
+source you can read. See [SECURITY.md](SECURITY.md), which also lists the
+exact six transactions Kiln will ever request, so anything else is a red flag.
+
+Hosting notes — deploying to Vercel, and why the contract artifact is
+committed — are in [VERCEL.md](VERCEL.md).
 
 After changing the contract, regenerate the bundled bytecode:
 

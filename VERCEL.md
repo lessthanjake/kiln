@@ -44,8 +44,12 @@ some artworks read the chain themselves at view time.
   and shows the real numbers before anything is committed.
 - Kiln only offers to reference Vessel tokens the connected wallet holds. The
   contracts do not enforce that; it is a courtesy the interface keeps.
-- The things actually worth verifying are on-chain, not in the hosting: that
-  the VesselPortal address Kiln uses is the one you expect, that its `vessel()`
-  and `relics()` point at the real contracts, and that its source is verified.
-  `script/publish-renderer.sh` checks all three, and `contracts/AUDIT.md`
-  documents what the renderer does and does not guarantee.
+- **Hosting it is the part that carries risk.** The contracts are immutable and
+  ownerless and cannot take anyone's assets, but whoever controls the domain
+  controls which transaction a visitor is asked to approve. Treat the hosting
+  account and this repo as security-critical, keep the dependency set small,
+  and expect users to prefer running it themselves.
+- Tell people what Kiln will never ask for — a token approval, a message
+  signature, a transfer — so a tampered copy is recognisable. That list, and
+  how to verify the VesselPortal deployment on-chain, is in
+  [SECURITY.md](SECURITY.md).
