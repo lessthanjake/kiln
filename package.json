@@ -16,5 +16,8 @@
   "devDependencies": {
     "esbuild": "^0.25.0",
     "viem": "^2.37.0"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }
