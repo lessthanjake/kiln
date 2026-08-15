@@ -71,6 +71,13 @@
   .drop.over { border-color: var(--ember); }
   .drop.filled { border-style: solid; color: var(--text); }
   .drop small { display: block; font-size: .72rem; margin-top: .25rem; color: var(--dim); }
+  .drop.filled { position: relative; }
+  .drop .clear {
+    position: absolute; top: .35rem; right: .45rem;
+    background: none; border: none; color: var(--dim); cursor: pointer;
+    font: inherit; font-size: .8rem; line-height: 1; padding: .15rem .3rem;
+  }
+  .drop .clear:hover { color: var(--err); }
   .hidden { display: none !important; }
   #entries-list { display: flex; flex-direction: column; gap: .35rem; margin-top: .5rem; }
   .entry-row {
@@ -211,7 +218,7 @@
           </div>
           <div class="drop" id="drop-html" tabindex="0">
             artwork file
-            <small>optional — HTML artifact; makes it an animated token</small>
+            <small>optional — HTML artifact. Leave empty for a static piece; the thumbnail is the artwork.</small>
           </div>
         </div>
         <input type="file" id="file-image" accept="image/*,.svg" class="hidden">

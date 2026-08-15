@@ -316,38 +316,98 @@ for (const id of ['col-name', 'col-symbol', 'tok-name', 'tok-desc', 'tok-id', 'a
   $(id).addEventListener('input', recompute)
 }
 
-function wireDrop(dropId, inputId, onFile) {
+/// A drop zone that validates what it is given, shows what it holds, and can
+/// be emptied again. `accept` only filters the file-picker dialog — a drag and
+/// drop bypasses it entirely — so the kind check has to live here, or an image
+/// dropped on the artwork slot would be minted labelled `text/html`.
+function wireDrop(dropId, inputId, { kind, onFile, onClear }) {
   const drop = $(dropId)
   const input = $(inputId)
+  const prompt = drop.firstChild.textContent
+
+  const looksRight = (file) => {
+    if (kind === 'image') return /^image\//.test(file.type) || /\.(png|jpe?g|gif|svg|webp|avif)$/i.test(file.name)
+    // An HTML artifact: trust the type when the OS supplies one, fall back to
+    // the extension, since drops from some apps arrive with an empty type.
+    return /html/.test(file.type) || /\.(html?|xhtml)$/i.test(file.name)
+  }
+
+  const clear = () => {
+    drop.classList.remove('filled')
+    drop.innerHTML = ''
+    drop.append(document.createTextNode(prompt), promptSmall.cloneNode(true))
+    input.value = ''
+    onClear()
+    recompute()
+  }
+
+  // Keep the original hint so clearing can restore it verbatim.
+  const promptSmall = drop.querySelector('small').cloneNode(true)
+
+  const accept = async (file) => {
+    if (!looksRight(file)) {
+      showError(kind === 'image'
+        ? `${file.name} is not an image — the ${dropId === 'drop-poster' ? 'thumbnail' : 'still'} must be png / jpg / gif / svg`
+        : `${file.name} is not an HTML file — the artwork file takes an HTML artifact. For a static piece, leave this empty.`)
+      input.value = ''
+      return
+    }
+    await onFile(file)
+    drop.classList.add('filled')
+    drop.innerHTML = ''
+    drop.append(
+      document.createTextNode(`${file.name} · ${(file.size / 1024).toFixed(1)} KB`),
+      el('button', { class: 'clear', type: 'button', title: 'remove', text: '✕' }),
+    )
+    drop.querySelector('.clear').addEventListener('click', (e) => { e.stopPropagation(); clear() })
+    recompute()
+  }
+
   drop.addEventListener('click', () => input.click())
   drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over') })
   drop.addEventListener('dragleave', () => drop.classList.remove('over'))
   drop.addEventListener('drop', (e) => {
     e.preventDefault(); drop.classList.remove('over')
-    if (e.dataTransfer.files[0]) onFile(e.dataTransfer.files[0], drop)
+    if (e.dataTransfer.files[0]) accept(e.dataTransfer.files[0])
   })
-  input.addEventListener('change', () => { if (input.files[0]) onFile(input.files[0], drop) })
+  input.addEventListener('change', () => { if (input.files[0]) accept(input.files[0]) })
+}
+
+/// Minimal element helper for the bits built in JS.
+function el(tag, attrs = {}) {
+  const node = document.createElement(tag)
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === 'class') node.className = v
+    else if (k === 'text') node.textContent = v
+    else node.setAttribute(k, v)
+  }
+  return node
 }
 
 async function fileBytes(file) { return new Uint8Array(await file.arrayBuffer()) }
-function markFilled(drop, file) {
-  drop.classList.add('filled')
-  drop.firstChild.textContent = `${file.name} · ${(file.size / 1024).toFixed(1)} KB`
-}
 
-wireDrop('drop-image', 'file-image', async (file, drop) => {
-  state.image = { dataURI: toDataURI(await fileBytes(file), file.type || 'image/png') }
-  markFilled(drop, file); recompute()
+wireDrop('drop-image', 'file-image', {
+  kind: 'image',
+  onFile: async (file) => {
+    state.image = { dataURI: toDataURI(await fileBytes(file), file.type || 'image/png') }
+  },
+  onClear: () => { state.image = null },
 })
-wireDrop('drop-html', 'file-html', async (file, drop) => {
-  const bytes = await fileBytes(file)
-  state.html = { dataURI: toDataURI(bytes, 'text/html'), text: new TextDecoder().decode(bytes) }
-  markFilled(drop, file); recompute()
+wireDrop('drop-html', 'file-html', {
+  kind: 'html',
+  onFile: async (file) => {
+    const bytes = await fileBytes(file)
+    state.html = { dataURI: toDataURI(bytes, 'text/html'), text: new TextDecoder().decode(bytes) }
+  },
+  onClear: () => { state.html = null },
 })
-wireDrop('drop-poster', 'file-poster', async (file, drop) => {
-  const raw = await fileBytes(file)
-  state.poster = { bytes: raw, mime: file.type || 'image/png', dataURI: toDataURI(raw, file.type || 'image/png') }
-  markFilled(drop, file); recompute()
+wireDrop('drop-poster', 'file-poster', {
+  kind: 'image',
+  onFile: async (file) => {
+    const raw = await fileBytes(file)
+    state.poster = { bytes: raw, mime: file.type || 'image/png', dataURI: toDataURI(raw, file.type || 'image/png') }
+  },
+  onClear: () => { state.poster = null },
 })
 
 // ── vessel inspection ───────────────────────────────────────────────────────
