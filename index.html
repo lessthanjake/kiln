@@ -97,6 +97,14 @@
   #result a { color: var(--ember); }
   #result code { word-break: break-all; font-size: .75rem; color: var(--dim); }
   .note { font-size: .78rem; color: var(--dim); }
+  .intro p { margin: 0 0 .6rem; font-size: .82rem; line-height: 1.6; }
+  .intro ol { margin: 0 0 .6rem; padding-left: 1.1rem; }
+  .intro li { font-size: .82rem; line-height: 1.6; margin-bottom: .45rem; color: var(--dim); }
+  .intro li b { color: var(--text); font-weight: 600; }
+  .intro a { color: var(--ember); }
+  .intro .contracts { margin: 0; font-size: .72rem; color: var(--dim); }
+  .intro .contracts a { color: var(--dim); text-decoration: underline; }
+  .intro .contracts a:hover { color: var(--ember); }
   #build-stamp {
     margin: 2.5rem 0 0; text-align: right; font-size: .68rem; color: var(--dim); opacity: .7;
   }
@@ -141,6 +149,29 @@
       <span id="account" class="note hidden"></span>
     </div>
   </header>
+
+  <section id="s-intro">
+    <div class="panel intro">
+      <p>
+        Mint fully on-chain 1/1s on <a href="https://networked.art" target="_blank" rel="noopener">networked.art</a> — nothing on IPFS. Two ways:
+      </p>
+      <ol>
+        <li>
+          <b>Upload files.</b> Your image and HTML become bytes in contract
+          storage. Every byte is paid for at mint, so smaller files mean less
+          gas — a few KB costs cents, a few hundred KB costs real money.
+        </li>
+        <li>
+          <b>Reference a vessel token.</b> Point at content already stored on
+          <a href="https://thevessel.fun" target="_blank" rel="noopener">The Vessel</a>
+          and the token stores only a pointer — under 1 KB whatever the artwork
+          weighs, because the bytes are already on-chain. Rendered at view time
+          by VesselPortal, a renderer registered on your collection.
+        </li>
+      </ol>
+      <p class="contracts">Contracts this page talks to: <span id="contract-links"></span></p>
+    </div>
+  </section>
 
   <section id="s-destination">
     <h2>Collection</h2>
@@ -265,7 +296,7 @@
       <div><b id="m-gas">—</b><span>est. gas</span></div>
       <div><b id="m-eth">—</b><span>est. eth</span></div>
       <div><b id="m-usd">—</b><span>est. usd</span></div>
-      <p id="meter-note">every byte is priced — base64 inflates files by 4/3; a vessel reference stores ~400 bytes regardless of artwork size</p>
+      <p id="meter-note">uploaded bytes are priced at mint — base64 inflates files by 4/3; a vessel reference stays under 1 KB whatever it points at</p>
       <p id="size-verdict" class="note hidden" style="grid-column: 1 / -1"></p>
     </div>
   </section>

@@ -1108,6 +1108,25 @@ function showError(err) {
 
 recompute()
 
+// ── what this page talks to ─────────────────────────────────────────────────
+//
+// Rendered from ADDRESSES rather than written out, so the links can never
+// drift from the contracts the app actually calls.
+{
+  const el = $('contract-links')
+  const entries = [
+    ['networked.art factory', ADDRESSES.factory],
+    ['The Vessel', ADDRESSES.vessel],
+    ['Relics', ADDRESSES.relics],
+    ['VesselPortal', ADDRESSES.vesselPortal],
+  ]
+  el.innerHTML = entries
+    .map(([label, addr]) => addr
+      ? `<a href="https://etherscan.io/address/${addr}#code" target="_blank" rel="noopener" title="${addr}">${label}</a>`
+      : `<span title="deployed on your first vessel mint">${label} (not yet deployed)</span>`)
+    .join(' · ')
+}
+
 // ── build identity ──────────────────────────────────────────────────────────
 //
 // Injected at bundle time (script/build.mjs). With push-to-deploy, this is the
