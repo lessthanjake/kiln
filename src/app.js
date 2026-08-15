@@ -90,30 +90,7 @@ $('connect').addEventListener('click', async () => {
 
     await refreshPrices()
     await loadCollections()
-    // ── build identity ──────────────────────────────────────────────────────────
-//
-// Injected at bundle time (script/build.mjs). With push-to-deploy, this is the
-// only way to tell from the page which commit you are actually running.
-const BUILD = typeof __KILN_BUILD__ !== 'undefined'
-  ? __KILN_BUILD__
-  : { commit: 'dev', ref: '—', env: 'local', builtAt: '', repo: '' }
-
-;(function renderBuildStamp() {
-  const el = $('build-stamp')
-  if (!el) return
-  const link = BUILD.repo && BUILD.commit !== 'dev' && !BUILD.commit.endsWith('+')
-    ? `<a href="${BUILD.repo}/commit/${BUILD.commit}" target="_blank" rel="noopener">${BUILD.commit}</a>`
-    : BUILD.commit
-  const portal = ADDRESSES.vesselPortal
-    ? `renderer ${ADDRESSES.vesselPortal.slice(0, 8)}…`
-    : 'renderer not yet deployed'
-  el.innerHTML = `<span class="dot">●</span> build ${link} · ${BUILD.ref} · ${BUILD.env}`
-    + `${BUILD.builtAt ? ` · ${BUILD.builtAt}` : ''} · ${portal}`
-  el.title = `Kiln build ${BUILD.commit} from ${BUILD.ref} (${BUILD.env})`
-    + `${BUILD.builtAt ? `, built ${BUILD.builtAt}` : ''}`
-})()
-
-recompute()
+    recompute()
     loadOwnedVessels() // background — populates the vessel picker when done
   } catch (err) { showError(err) }
 })
@@ -1130,3 +1107,25 @@ function showError(err) {
 }
 
 recompute()
+
+// ── build identity ──────────────────────────────────────────────────────────
+//
+// Injected at bundle time (script/build.mjs). With push-to-deploy, this is the
+// only way to tell from the page which commit you are actually running.
+const BUILD = typeof __KILN_BUILD__ !== 'undefined'
+  ? __KILN_BUILD__
+  : { commit: 'dev', ref: '—', env: 'local', builtAt: '', repo: '' }
+
+{
+  const el = $('build-stamp')
+  const link = BUILD.repo && BUILD.commit !== 'dev' && !BUILD.commit.endsWith('+')
+    ? `<a href="${BUILD.repo}/commit/${BUILD.commit}" target="_blank" rel="noopener">${BUILD.commit}</a>`
+    : BUILD.commit
+  const portal = ADDRESSES.vesselPortal
+    ? `renderer ${ADDRESSES.vesselPortal.slice(0, 8)}…`
+    : 'renderer not yet deployed'
+  el.innerHTML = `<span class="dot">●</span> build ${link} · ${BUILD.ref} · ${BUILD.env}`
+    + `${BUILD.builtAt ? ` · ${BUILD.builtAt}` : ''} · ${portal}`
+  el.title = `Kiln build ${BUILD.commit} from ${BUILD.ref} (${BUILD.env})`
+    + `${BUILD.builtAt ? `, built ${BUILD.builtAt}` : ''}`
+}
