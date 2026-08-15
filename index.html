@@ -162,7 +162,8 @@
           gas — a few KB costs cents, a few hundred KB costs real money.
         </li>
         <li>
-          <b>Reference a vessel token.</b> Point at content already stored on
+          <b>Reference a vessel token.</b> Point the poster, the animation, or
+          both at content already stored on
           <a href="https://thevessel.fun" target="_blank" rel="noopener">The Vessel</a>
           and the token stores only a pointer — under 1 KB whatever the artwork
           weighs, because the bytes are already on-chain. Rendered at view time
@@ -206,7 +207,7 @@
         <div class="row">
           <div class="drop" id="drop-image" tabindex="0">
             drop poster image
-            <small>required — png / jpg / svg / gif · becomes the token image</small>
+            <small>required — png / jpg / svg / gif · the token's <code>image</code></small>
           </div>
           <div class="drop" id="drop-html" tabindex="0">
             drop html artwork
@@ -251,7 +252,7 @@
             <button data-pmode="vessel">use a vessel entry</button>
           </div>
           <div id="poster-upload">
-            <div class="drop" id="drop-poster" tabindex="0">drop poster image<small>stored in the token — you pay for its size</small></div>
+            <div class="drop" id="drop-poster" tabindex="0">drop poster image<small>uploaded, so you pay for its size at mint</small></div>
             <input type="file" id="file-poster" accept="image/*,.svg" class="hidden">
           </div>
           <div id="poster-vessel" class="hidden">

@@ -78,7 +78,8 @@ Chainlink feed with a small buffer; the contract refunds the excess.
 The Vessel (`0xECb92Cc7112b80A2234936315BbB493fb48d1463`) and its Relics
 contract (`0x48cB121Fa84b7C08692e74872D044B15369977CD`) at view time.
 
-A token is two `Source`s — a poster and an animation — resolved the same way:
+A token is two `Source`s — a poster and an animation, networked.art's own
+terms for the still `image` and the `animation_url` — resolved the same way:
 
 ```solidity
 struct Source {

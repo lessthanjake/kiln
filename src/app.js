@@ -1026,7 +1026,7 @@ function renderPosterChoices() {
     return
   }
   if (!candidates.length) {
-    sel.innerHTML = `<option value="">#${state.vessel.id} has no image entries — upload a file instead</option>`
+    sel.innerHTML = `<option value="">#${state.vessel.id} has no image entries — upload one instead</option>`
     state.posterPick = null
     return
   }
