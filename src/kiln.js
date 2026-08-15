@@ -263,6 +263,28 @@ export function xmlAssemblyWarnings({ mime, parts }) {
   return warnings
 }
 
+// `animation_url` is not HTML-only: the metadata standard also carries video,
+// audio and 3D models, and networked.art's own uploader says "Image, video,
+// GLB model, animation, or HTML artifact". Browsers often hand over files with
+// an empty or wrong `type`, so fall back to the extension.
+export const ANIMATION_MIME = {
+  html: 'text/html', htm: 'text/html', xhtml: 'application/xhtml+xml',
+  mp4: 'video/mp4', m4v: 'video/x-m4v', webm: 'video/webm', ogv: 'video/ogg', mov: 'video/quicktime',
+  mp3: 'audio/mpeg', wav: 'audio/wav', oga: 'audio/ogg', ogg: 'audio/ogg', m4a: 'audio/mp4',
+  glb: 'model/gltf-binary', gltf: 'model/gltf+json',
+  gif: 'image/gif', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+  svg: 'image/svg+xml', webp: 'image/webp', avif: 'image/avif',
+}
+
+/// The mime to mint a file under. Trusts the browser when it says something
+/// specific, else the extension, else refuses to guess.
+export function mimeForFile({ name = '', type = '' } = {}) {
+  const ext = (name.split('.').pop() || '').toLowerCase()
+  if (ANIMATION_MIME[ext]) return ANIMATION_MIME[ext]
+  if (type && type !== 'application/octet-stream') return type
+  return null
+}
+
 // What the entry sniffer's kinds mean as a data-URI mime.
 export const KIND_MIME = {
   html: 'text/html',

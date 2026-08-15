@@ -25,6 +25,7 @@ import {
   WARN_CONTENT_BYTES,
   MAX_ENTRIES,
   contentSizeVerdict,
+  mimeForFile,
   xmlAssemblyWarnings,
   trailingJunk,
   isXmlMime,
@@ -304,4 +305,23 @@ test('non-xml mimes are never warned about', () => {
 test('isXmlMime is case and whitespace tolerant', () => {
   assert.ok(isXmlMime(' Image/SVG+XML '))
   assert.ok(!isXmlMime('text/html'))
+})
+
+test('mimeForFile names what animation_url actually carries', () => {
+  const cases = [
+    ['piece.html', '', 'text/html'],
+    ['loop.mp4', 'video/mp4', 'video/mp4'],
+    ['clip.mov', '', 'video/quicktime'],
+    ['scene.glb', '', 'model/gltf-binary'],
+    ['track.mp3', '', 'audio/mpeg'],
+    ['anim.gif', '', 'image/gif'],
+    // Browsers often hand over an empty or generic type; the extension wins.
+    ['piece.html', 'application/octet-stream', 'text/html'],
+  ]
+  for (const [name, type, expected] of cases) {
+    assert.equal(mimeForFile({ name, type }), expected, `${name} (${type || 'no type'})`)
+  }
+  // Unknown and unnameable: refuse rather than mint something mislabelled.
+  assert.equal(mimeForFile({ name: 'mystery.qqq', type: '' }), null)
+  assert.equal(mimeForFile({ name: 'blob', type: 'application/octet-stream' }), null)
 })

@@ -8,7 +8,7 @@ import {
 import { mainnet } from 'viem/chains'
 
 import {
-  ADDRESSES, CHUNK_SIZE, KIND_MIME, MAX_ENTRIES, contentSizeVerdict,
+  ADDRESSES, CHUNK_SIZE, KIND_MIME, MAX_ENTRIES, contentSizeVerdict, mimeForFile,
   xmlAssemblyWarnings, buildUploadArtifact,
   KIND, referenceSource, inlineSource, absentSource, buildArtifact, isMutableSource,
   chunkArtifact, toDataURI, bytesToHex, base64Decode, estimateGas,
@@ -327,9 +327,10 @@ function wireDrop(dropId, inputId, { kind, onFile, onClear }) {
 
   const looksRight = (file) => {
     if (kind === 'image') return /^image\//.test(file.type) || /\.(png|jpe?g|gif|svg|webp|avif)$/i.test(file.name)
-    // An HTML artifact: trust the type when the OS supplies one, fall back to
-    // the extension, since drops from some apps arrive with an empty type.
-    return /html/.test(file.type) || /\.(html?|xhtml)$/i.test(file.name)
+    // The artwork slot is `animation_url`, which carries HTML, video, audio and
+    // 3D models — not HTML alone. Refuse only what we cannot name a type for,
+    // since minting under the wrong mime is permanent.
+    return mimeForFile(file) !== null
   }
 
   const clear = () => {
@@ -348,7 +349,7 @@ function wireDrop(dropId, inputId, { kind, onFile, onClear }) {
     if (!looksRight(file)) {
       showError(kind === 'image'
         ? `${file.name} is not an image — the ${dropId === 'drop-poster' ? 'thumbnail' : 'still'} must be png / jpg / gif / svg`
-        : `${file.name} is not an HTML file — the artwork file takes an HTML artifact. For a static piece, leave this empty.`)
+        : `cannot determine a media type for ${file.name} — rename it with a known extension (html, mp4, webm, mov, mp3, wav, glb, gif…) so it is not minted mislabelled`)
       input.value = ''
       return
     }
@@ -397,7 +398,14 @@ wireDrop('drop-html', 'file-html', {
   kind: 'html',
   onFile: async (file) => {
     const bytes = await fileBytes(file)
-    state.html = { dataURI: toDataURI(bytes, 'text/html'), text: new TextDecoder().decode(bytes) }
+    const mime = mimeForFile(file)
+    state.html = {
+      mime,
+      dataURI: toDataURI(bytes, mime),
+      // Only markup gets the XML/padding checks; decoding an mp4 as text is
+      // meaningless and would only produce noise.
+      text: /html|xml|svg/.test(mime) ? new TextDecoder().decode(bytes) : '',
+    }
   },
   onClear: () => { state.html = null },
 })
