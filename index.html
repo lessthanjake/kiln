@@ -157,12 +157,12 @@
       </p>
       <ol>
         <li>
-          <b>Upload files.</b> Your image and HTML become bytes in contract
-          storage. Every byte is paid for at mint, so smaller files mean less
+          <b>Upload files.</b> Your artwork file and thumbnail become bytes in
+          contract storage. Every byte is paid for at mint, so smaller files mean less
           gas — a few KB costs cents, a few hundred KB costs real money.
         </li>
         <li>
-          <b>Reference a vessel token.</b> Point the poster, the animation, or
+          <b>Reference a vessel token.</b> Point the artwork, the thumbnail, or
           both at content already stored on
           <a href="https://thevessel.fun" target="_blank" rel="noopener">The Vessel</a>
           and the token stores only a pointer — under 1 KB whatever the artwork
@@ -183,8 +183,8 @@
       </div>
       <div id="dest-new">
         <div class="row">
-          <div><label>name</label><input type="text" id="col-name" placeholder="My Collection"></div>
-          <div><label>symbol</label><input type="text" id="col-symbol" placeholder="COLL"></div>
+          <div><label>collection name</label><input type="text" id="col-name" placeholder="My Collection"></div>
+          <div><label>collection symbol</label><input type="text" id="col-symbol" placeholder="COLL"></div>
         </div>
       </div>
       <div id="dest-existing" class="hidden">
@@ -206,12 +206,12 @@
       <div id="source-upload">
         <div class="row">
           <div class="drop" id="drop-image" tabindex="0">
-            drop poster image
-            <small>required — png / jpg / svg / gif · the token's <code>image</code></small>
+            static thumbnail
+            <small>required — png / jpg / svg / gif · the still shown in listings</small>
           </div>
           <div class="drop" id="drop-html" tabindex="0">
-            drop html artwork
-            <small>optional — makes it an animated token (animation_url)</small>
+            artwork file
+            <small>optional — HTML artifact; makes it an animated token</small>
           </div>
         </div>
         <input type="file" id="file-image" accept="image/*,.svg" class="hidden">
@@ -246,13 +246,13 @@
           <label>content type</label>
           <input type="text" id="vessel-mime" value="text/html">
           <p class="note">fixed at mint — in live mode, every future payload is served as this type, so keep a rotating vault within one medium</p>
-          <label>poster image</label>
+          <label>static thumbnail</label>
           <div class="choices" id="poster-mode">
             <button data-pmode="upload" class="active">upload a file</button>
             <button data-pmode="vessel">use a vessel entry</button>
           </div>
           <div id="poster-upload">
-            <div class="drop" id="drop-poster" tabindex="0">drop poster image<small>uploaded, so you pay for its size at mint</small></div>
+            <div class="drop" id="drop-poster" tabindex="0">static thumbnail<small>uploaded, so you pay for its size at mint</small></div>
             <input type="file" id="file-poster" accept="image/*,.svg" class="hidden">
           </div>
           <div id="poster-vessel" class="hidden">
@@ -274,9 +274,9 @@
       </div>
       <label>description</label>
       <textarea id="tok-desc" placeholder=""></textarea>
-      <label><input type="checkbox" id="auction-toggle"> start a 1/1 auction (protocol charges a $10 listing fee)</label>
+      <label><input type="checkbox" id="auction-toggle"> list the 1/1 for auction ($10 creation fee)</label>
       <div id="auction-fields" class="row hidden">
-        <div><label>reserve (whole USD, min 10)</label><input type="number" id="auction-reserve" min="10" value="10"></div>
+        <div><label>reserve price (whole USD, min 10)</label><input type="number" id="auction-reserve" min="10" value="10"></div>
         <div><label>duration</label>
           <select id="auction-duration">
             <option value="86400">24 hours</option>
@@ -303,10 +303,10 @@
   </section>
 
   <section id="s-preview">
-    <h2>Preview <span class="note">— byte-identical to what mints</span></h2>
+    <h2>Artwork preview <span class="note">— byte-identical to what mints</span></h2>
     <div class="panel">
       <div style="display:flex; gap:1rem; align-items:flex-start;">
-        <img id="preview-poster" class="hidden" alt="poster preview">
+        <img id="preview-poster" class="hidden" alt="static thumbnail preview">
         <div style="flex:1; position:relative">
           <iframe id="preview-frame" sandbox="allow-scripts" title="artwork preview"></iframe>
           <div id="preview-actions">
