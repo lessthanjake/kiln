@@ -40,10 +40,12 @@ some artworks read the chain themselves at view time.
 - Everything happens in the visitor's browser. There is no backend, no
   analytics, no key material, and nothing is uploaded anywhere.
 - Every transaction is signed in the visitor's own wallet, after their own
-  review. Kiln estimates gas and shows costs, but the wallet is the authority.
+  review. Kiln estimates gas and shows costs, but the wallet is the authority
+  and shows the real numbers before anything is committed.
 - Kiln only offers to reference Vessel tokens the connected wallet holds. The
   contracts do not enforce that; it is a courtesy the interface keeps.
-- A hosted copy is a convenience, not a trust anchor. Anyone minting something
-  they care about should read `contracts/AUDIT.md`, check that the canonical
-  `vesselPortal` address in `src/kiln.js` matches what they expect on-chain,
-  and ideally run it locally with `npm run serve`.
+- The things actually worth verifying are on-chain, not in the hosting: that
+  the VesselPortal address Kiln uses is the one you expect, that its `vessel()`
+  and `relics()` point at the real contracts, and that its source is verified.
+  `script/publish-renderer.sh` checks all three, and `contracts/AUDIT.md`
+  documents what the renderer does and does not guarantee.

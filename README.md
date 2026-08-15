@@ -17,10 +17,9 @@ npm run build       # bundles the app into dist/
 npm run serve       # http://localhost:8788 — open in your wallet browser
 ```
 
-Running it locally is the recommended way to mint anything you care about: the
-whole app is client-side, so a local copy behaves identically to a hosted one
-with nothing between you and your wallet. Hosting notes, including how to
-deploy to Vercel and why the contract artifact is committed, are in
+The whole app is client-side, so a local copy and a hosted one behave
+identically — run it either way. Hosting notes, including how to deploy to
+Vercel and why the contract artifact is committed, are in
 [VERCEL.md](VERCEL.md).
 
 After changing the contract, regenerate the bundled bytecode:
