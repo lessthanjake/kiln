@@ -7,7 +7,7 @@
   "scripts": {
     "sync-artifact": "node script/sync-artifact.mjs",
     "check-artifact": "node script/sync-artifact.mjs --check",
-    "build": "esbuild src/app.js --bundle --format=esm --outfile=dist/app.js && cp index.html dist/index.html",
+    "build": "node script/build.mjs",
     "test": "node --test 'test/**/*.test.js'",
     "serve": "npx serve dist -l 8788",
     "rehearse": "node script/fork-mint.mjs",
