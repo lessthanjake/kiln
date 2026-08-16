@@ -419,8 +419,8 @@ test('chunkForVault flags what the renderer could not later assemble', () => {
 
 test('planVaultWrites stacks files so two of them never claim the same slot', () => {
   const plans = planVaultWrites([
-    { name: 'vessel3d.html', bytes: new Uint8Array(38_757) },
-    { name: 'indexv4.html', bytes: new Uint8Array(35_308) },
+    { name: 'piece-a.html', bytes: new Uint8Array(38_757) },
+    { name: 'piece-b.html', bytes: new Uint8Array(35_308) },
   ], { vesselTokenId: 9994, startEntry: 41 })
 
   assert.deepEqual(plans[0].entries, [41, 42, 43, 44])

@@ -152,12 +152,12 @@ than sorting for you.
 
 ## A worked example of the trap
 
-Two files were chunked in separate runs against vessel #9994 when it held 41
-entries. Both manifests claimed entries 45–48, because the first run predicted
-41–44 for one file and the second run predicted 45–48 for the other, each
-assuming it went first.
+Two files, `piece-a.html` and `piece-b.html`, were chunked in separate runs
+against vessel #9994 when it held 41 entries. Both manifests claimed entries
+45–48, because each run predicted 41–44 for the file it was given and 45–48 for
+a file it assumed had gone first.
 
-The files were then written in the other order. `indexv4.html` landed at 41–44
+The files were then written in the other order. `piece-b.html` landed at 41–44
 while its manifest said 45–48. Referencing 45–48 would have pointed the token
 at the wrong bytes, and re-running a naive writer would have stored the same
 file a second time for another ~28M gas.
@@ -166,7 +166,7 @@ The content check catches exactly this:
 
 ```
 reading 45 existing entries to see what is already stored…
-  indexv4.html is already on chain at entries 41–44 — skipping
+  piece-b.html is already on chain at entries 41–44 — skipping
     (the manifest said 45–48; use the real entries above when referencing it in Kiln)
 ```
 
