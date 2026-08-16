@@ -20,6 +20,10 @@
   ],
   "links": [
     {
+      "label": "Source & audit",
+      "url": "https://github.com/lessthanjake/kiln"
+    },
+    {
       "label": "networked.art",
       "url": "https://networked.art"
     },
