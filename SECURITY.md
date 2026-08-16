@@ -67,5 +67,6 @@ this is a small tool given away.
 
 ## No warranty
 
-MIT-licensed, provided as-is. You are signing your own transactions with your
-own keys, and you are responsible for reading them.
+CC0 — public domain, provided as-is, with no warranty of any kind. You are
+signing your own transactions with your own keys, and you are responsible for
+reading them.

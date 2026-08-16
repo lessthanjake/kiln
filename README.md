@@ -209,6 +209,15 @@ contracts/lib/vendor/       solady SSTORE2/LibString + OZ Base64, pinned to the
                             exact versions the protocol itself was verified with
 ```
 
+## License
+
+[CC0 1.0](LICENSE) — public domain, no rights reserved, no attribution asked.
+Two carve-outs are spelled out in the LICENSE: `contracts/lib/vendor/` is
+third-party MIT code, and the SPDX headers inside `contracts/` are frozen
+because Solidity hashes source files into the deployed bytecode, so editing one
+would break this repo's byte-for-byte reproducibility against the verified
+contract on chain.
+
 ## Hard-won notes
 
 - **Vessel payloads are raw contract storage, not SSTORE2** — ~7.2M gas for a
