@@ -9,6 +9,7 @@ import { mainnet } from 'viem/chains'
 
 import {
   ADDRESSES, CHUNK_SIZE, KIND_MIME, MAX_ENTRIES, contentSizeVerdict, mimeForFile,
+  estimateRenderGas, RENDER_GAS_CAP, maxRenderableBytes,
   xmlAssemblyWarnings, buildUploadArtifact,
   KIND, referenceSource, inlineSource, absentSource, buildArtifact, isMutableSource,
   chunkArtifact, toDataURI, bytesToHex, base64Decode, estimateGas,
@@ -308,6 +309,7 @@ function setActive(group, active) {
 }
 
 $('col-select').addEventListener('change', (e) => selectCollection(Number(e.target.value)))
+$('ack-oversize').addEventListener('change', recompute)
 $('auction-toggle').addEventListener('change', () => {
   $('auction-fields').classList.toggle('hidden', !$('auction-toggle').checked)
   recompute()
@@ -832,6 +834,8 @@ function recompute() {
   $('m-chunks').textContent = String(chunks.length)
   $('m-txs').textContent = String(steps.length)
   showCost(gas, auction, false)
+  showRenderCost(resolvedContentSize())
+  updateOversizeAck()
   // The model above is a heuristic — measured against real estimates it runs
   // up to ~20% high on small mints, converging within a percent on large
   // ones. Once a wallet is connected the chain can be asked directly, so ask.
@@ -860,6 +864,18 @@ function resolvedContentSize() {
     ? (state.posterPick?.size ?? 0)
     : (state.poster?.bytes.length ?? 0)
   return animation + poster
+}
+
+/// Minting is only half the price of a token. Reading it is the half nothing
+/// on-chain enforces, so put it on screen next to the mint cost.
+function showRenderCost(contentBytes) {
+  const el = $('m-render')
+  if (!contentBytes) { el.textContent = '—'; el.parentElement.classList.remove('warn'); return }
+  const gas = estimateRenderGas(contentBytes)
+  el.textContent = `${(gas / 1e6).toFixed(1)}M`
+  el.title = `${gas.toLocaleString()} gas to read tokenURI; wallets and marketplaces typically cap at `
+    + `${(RENDER_GAS_CAP / 1e6).toFixed(0)}M`
+  el.parentElement.classList.toggle('warn', gas > RENDER_GAS_CAP * 0.6)
 }
 
 function updateXmlWarning() {
@@ -1006,11 +1022,31 @@ async function realEstimate(step, artifact, auction) {
   return null
 }
 
+/// An oversized upload mints without complaint and then cannot be read by
+/// anything, forever — the chain will not stop it, so Kiln does. Deliberate is
+/// fine; accidental is not, hence an explicit acknowledgement rather than a
+/// silent warning.
+function updateOversizeAck() {
+  const over = resolvedContentSize() > maxRenderableBytes()
+  $('oversize-ack').classList.toggle('hidden', !over)
+  if (!over) $('ack-oversize').checked = false
+  return over
+}
+
+function oversizeBlocked() {
+  return updateOversizeAck() && !$('ack-oversize').checked
+}
+
 function updateMintButton(steps) {
   const btn = $('mint')
   if (!state.account) { btn.disabled = true; btn.textContent = 'connect wallet to mint'; return }
   if (state.chainId !== 1) { btn.disabled = true; btn.textContent = 'switch to mainnet'; return }
   if (!steps || !validInputs()) { btn.disabled = true; btn.textContent = 'complete the form to mint'; return }
+  if (oversizeBlocked()) {
+    btn.disabled = true
+    btn.textContent = 'too large to render — acknowledge to continue'
+    return
+  }
   btn.disabled = false
   btn.textContent = steps.length === 1 ? 'mint' : `mint (${steps.length} transactions)`
 }

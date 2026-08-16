@@ -26,6 +26,9 @@ import {
   MAX_ENTRIES,
   contentSizeVerdict,
   mimeForFile,
+  estimateRenderGas,
+  RENDER_GAS_CAP,
+  maxRenderableBytes,
   xmlAssemblyWarnings,
   trailingJunk,
   isXmlMime,
@@ -334,4 +337,22 @@ test('mimeForFile names what animation_url actually carries', () => {
   // Unknown and unnameable: refuse rather than mint something mislabelled.
   assert.equal(mimeForFile({ name: 'mystery.qqq', type: '' }), null)
   assert.equal(mimeForFile({ name: 'blob', type: 'application/octet-stream' }), null)
+})
+
+test('render cost model matches the mainnet-fork measurements', () => {
+  // Measured against the stock AnimationRenderer's tokenURI on a fork.
+  const measured = [[32768, 10_387_010], [65536, 21_251_242], [131072, 45_196_311]]
+  for (const [bytes, actual] of measured) {
+    const err = Math.abs(estimateRenderGas(bytes) / actual - 1)
+    assert.ok(err < 0.02, `${bytes} B: model off by ${(err * 100).toFixed(1)}%`)
+  }
+  // 192 KB was measured out of gas; the model must agree it is over the cap.
+  assert.ok(estimateRenderGas(196608) > RENDER_GAS_CAP)
+})
+
+test('the renderable ceiling is where the model crosses the cap', () => {
+  const max = maxRenderableBytes()
+  assert.ok(max > 130_000 && max < 150_000, `unexpected ceiling ${max}`)
+  assert.ok(estimateRenderGas(max) < RENDER_GAS_CAP)
+  assert.ok(estimateRenderGas(max + 2000) > RENDER_GAS_CAP)
 })

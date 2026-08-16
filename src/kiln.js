@@ -108,6 +108,27 @@ export const WARN_CONTENT_BYTES = 96 * 1024
 export const MAX_ENTRIES = 64
 export const MAX_TEXT_BYTES = 2048
 
+// What it costs a wallet or marketplace to READ the token — the limit that
+// actually bites, and the one nothing on-chain enforces for the protocol's
+// stock renderers. Fitted to mainnet-fork measurements of tokenURI against
+// the AnimationRenderer (32 KB → 10.4M, 64 KB → 21.3M, 128 KB → 45.2M gas);
+// the fit is within 0.6% at every measured point, and correctly predicts the
+// out-of-gas observed at 192 KB.
+export const RENDER_GAS_CAP = 50_000_000 // geth's default eth_call cap
+export function estimateRenderGas(contentBytes) {
+  return Math.round(305.2 * contentBytes + 3.018e-4 * contentBytes * contentBytes)
+}
+
+/// The largest content that still reads inside `cap`. ~140 KB at 50M.
+export function maxRenderableBytes(cap = RENDER_GAS_CAP) {
+  let lo = 0, hi = 1_000_000
+  while (hi - lo > 16) {
+    const mid = (lo + hi) >> 1
+    if (estimateRenderGas(mid) < cap) lo = mid; else hi = mid
+  }
+  return lo
+}
+
 /// `byteLength` is the TOTAL resolved content (poster + animation).
 ///
 /// Both mint paths hit a wall around the same size, but they fail differently

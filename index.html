@@ -304,8 +304,13 @@
       <div><b id="m-gas">—</b><span>est. gas</span></div>
       <div><b id="m-eth">—</b><span>est. eth</span></div>
       <div><b id="m-usd">—</b><span>est. usd</span></div>
+      <div><b id="m-render">—</b><span>tokenURI read cost</span></div>
       <p id="meter-note">uploaded bytes are priced at mint — base64 inflates files by 4/3; a vessel reference stays under 1 KB whatever it points at</p>
       <p id="size-verdict" class="note hidden" style="grid-column: 1 / -1"></p>
+      <label id="oversize-ack" class="note hidden" style="grid-column: 1 / -1; display: flex; gap: .5rem; align-items: flex-start">
+        <input type="checkbox" id="ack-oversize" style="margin-top:.2rem">
+        <span>I understand this token may never render in a wallet or marketplace, and mint it anyway.</span>
+      </label>
     </div>
   </section>
 
