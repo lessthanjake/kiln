@@ -339,6 +339,77 @@ export function chunkArtifact(bytes) {
   return chunks
 }
 
+// ── writing to a vessel ─────────────────────────────────────────────────────
+//
+// Getting a work onto The Vessel is the step *before* Kiln: a file too big for
+// one slot is split across several, written one transaction each, and then
+// referenced at mint. The split is here rather than in the script because it
+// has to be exactly right — entries are append-only, so a bad split is paid
+// for twice.
+
+/// A vault's per-entry capacity is its own token id, in bytes. The contract's
+/// rule verbatim: `if (_bytes.length > _tokenId) revert BytesExceedCapacity`.
+/// Not a convention — vessel #9994 holds 9,994 bytes per entry, #500 holds 500.
+export function vaultCapacity(vesselTokenId) {
+  return Number(vesselTokenId)
+}
+
+/// Split a file across vault entries.
+///
+/// `startEntry` is where the first chunk lands: a vault's live `craftToEntry`
+/// is its entry *count*, and entries are 0-based, so the count is also the
+/// next free index. Writes append and cannot be undone, so anything already
+/// queued ahead of this file has to be counted too — that is what `after` is
+/// for when chunking several files in one sitting.
+///
+/// Chunks are raw file bytes. VesselPortal concatenates the entries you select
+/// in the order you select them, so no loader, index or assembler entry is
+/// needed; that was only ever a workaround for reassembling in a browser.
+export function chunkForVault(bytes, { vesselTokenId, startEntry = 0, after = 0 }) {
+  const capacity = vaultCapacity(vesselTokenId)
+  if (!(capacity > 0)) throw new Error(`vessel #${vesselTokenId} has no capacity`)
+  if (bytes.length === 0) throw new Error('refusing to chunk an empty file')
+
+  const chunks = []
+  for (let i = 0; i < bytes.length; i += capacity) chunks.push(bytes.subarray(i, i + capacity))
+
+  const first = startEntry + after
+  const entries = chunks.map((_, i) => first + i)
+
+  // The whole point is that the pieces come back byte-identical. Check it here,
+  // where it costs nothing, rather than discovering it after eight writes.
+  const rejoined = new Uint8Array(bytes.length)
+  let off = 0
+  for (const c of chunks) { rejoined.set(c, off); off += c.length }
+  const identical = off === bytes.length && rejoined.every((b, i) => b === bytes[i])
+  if (!identical) throw new Error('reassembly mismatch — refusing to emit chunks')
+
+  return {
+    capacity,
+    chunks,
+    entries,
+    startEntry: first,
+    endEntry: first + chunks.length - 1,
+    totalBytes: bytes.length,
+    // MAX_ENTRIES bounds a single *reference*, so a file needing more chunks
+    // than that cannot be assembled by the renderer at all.
+    exceedsMaxEntries: chunks.length > MAX_ENTRIES,
+    exceedsContentBudget: bytes.length > MAX_CONTENT_BYTES,
+  }
+}
+
+/// Plan several files written to one vault in a single sitting. Each file's
+/// entries depend on every file queued before it, which is the mistake worth
+/// designing out: chunk two files independently and both claim the same slots.
+export function planVaultWrites(files, { vesselTokenId, startEntry }) {
+  let cursor = 0
+  return files.map(({ name, bytes }) => {
+    const plan = chunkForVault(bytes, { vesselTokenId, startEntry, after: cursor })
+    cursor += plan.chunks.length
+    return { name, ...plan }
+  })
+}
+
 // ── gas & cost model ────────────────────────────────────────────────────────
 //
 // The estimate the UI shows before a wallet is even connected. The number

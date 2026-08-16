@@ -8,6 +8,8 @@ contracts/broadcast/
 *.log
 .DS_Store
 .gstack/
+chunks/
+vessel-writes.json
 contracts/lib/forge-std/
 
 # generated but committed — see VERCEL.md

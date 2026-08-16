@@ -344,11 +344,24 @@ function wireDrop(dropId, inputId, { kind, onFile, onClear }) {
     return mimeForFile(file) !== null
   }
 
+  // A rejected file is a problem with *this* slot, so it is reported at this
+  // slot. Routing it to the mint error box put it a screen away from the drop
+  // zone that refused it, and left it standing after a good file replaced it.
+  const problem = el('p', { class: 'error-text drop-error hidden' })
+  drop.insertAdjacentElement('afterend', problem)
+  const reject = (message) => {
+    problem.textContent = message
+    problem.classList.remove('hidden')
+    input.value = ''
+  }
+  const forgive = () => { problem.textContent = ''; problem.classList.add('hidden') }
+
   const clear = () => {
     drop.classList.remove('filled')
     drop.innerHTML = ''
     drop.append(document.createTextNode(prompt), promptSmall.cloneNode(true))
     input.value = ''
+    forgive()
     onClear()
     recompute()
   }
@@ -359,12 +372,11 @@ function wireDrop(dropId, inputId, { kind, onFile, onClear }) {
 
   const accept = async (file) => {
     if (!looksRight(file)) {
-      showError(kind === 'image'
+      return reject(kind === 'image'
         ? `${file.name} is not an image — the ${dropId === 'drop-poster' ? 'thumbnail' : 'still'} must be png / jpg / gif / svg`
         : `cannot determine a media type for ${file.name} — rename it with a known extension (html, mp4, webm, mov, mp3, wav, glb, gif…) so it is not minted mislabelled`)
-      input.value = ''
-      return
     }
+    forgive()
     await onFile(file)
     drop.classList.add('filled')
     drop.innerHTML = ''
@@ -809,12 +821,26 @@ function currentSteps(chunkCount, byteLength) {
   const auction = $('auction-toggle').checked
   const newCollection = state.dest === 'new'
   if (state.source === 'upload') return planFlow({ byteLength, chunkCount, newCollection, auction }).steps
+
   const steps = []
   if (newCollection) steps.push({ call: 'cloneCollection' })
   if (state.registeredVesselPortalIndex == null || newCollection) {
     if (!state.vesselPortalAddr) steps.push({ call: 'deployVesselPortal' })
     steps.push({ call: 'registerRenderer' })
   }
+
+  // A referenced artifact is a few hundred bytes and always fits in one mint,
+  // but an *uploaded* thumbnail alongside a referenced artwork rides inline
+  // and can be up to the renderer's whole 128 KB budget — past the single-tx
+  // gas cap at ~113 KB. Stage it the same way the upload path does rather
+  // than handing the wallet a transaction that cannot be mined.
+  const plan = planFlow({ byteLength, chunkCount, newCollection: false, auction })
+  if (plan.staged) {
+    steps.push(...plan.steps.filter((s) => s.call === 'prepareArtifact'))
+    steps.push({ call: auction ? 'mintToLot' : 'mint', emptyArtifact: true })
+    return steps
+  }
+
   steps.push({ call: auction ? 'mintToLot' : 'mint' })
   return steps
 }

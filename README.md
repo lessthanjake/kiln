@@ -72,6 +72,23 @@ Auction params are computed at click time (`expiresAt = now + duration`) and
 signature. The $10 lot-creation fee is quoted from the protocol's own
 Chainlink feed with a small buffer; the contract refunds the excess.
 
+## Putting a work on The Vessel first
+
+Referencing a vessel entry assumes the work is already stored there. Getting it
+there is a step before Kiln, and this repo does it:
+
+```bash
+node script/chunk-for-vessel.mjs artwork.html --vessel 9994   # split at capacity
+node script/write-to-vessel.mjs chunks/artwork                # simulate on a fork
+node script/write-to-vessel.mjs chunks/artwork --calldata     # sign in your wallet
+```
+
+A vault entry holds at most `tokenId` bytes and entries are append-only, so a
+bad split is paid for twice. The writer plans from content rather than slot
+numbers: it hashes every existing entry first and skips a file already stored,
+whatever a stale manifest claims. Full process, costs and traps in
+[docs/VESSEL-CHUNKING.md](docs/VESSEL-CHUNKING.md).
+
 ## VesselPortal
 
 `contracts/src/VesselPortal.sol` — a networked.art `IRenderer` that reads
@@ -184,6 +201,8 @@ index.html, src/app.js      the page and its wiring
 src/kiln.js                 pure logic — encoding, chunking, gas model, flow planner
 src/abi.js                  hand-pruned ABIs, verified against on-chain sources
 test/kiln.test.js           node:test suite for the pure logic
+script/chunk-for-vessel.mjs split a file across vault entries (see docs/VESSEL-CHUNKING.md)
+script/write-to-vessel.mjs  write those chunks: simulate, emit calldata, or broadcast
 script/fork-mint.mjs        the rehearsal (anvil mainnet fork, both paths)
 contracts/                  foundry project: VesselPortal.sol, fork tests, deploy script
 contracts/lib/vendor/       solady SSTORE2/LibString + OZ Base64, pinned to the
@@ -192,6 +211,9 @@ contracts/lib/vendor/       solady SSTORE2/LibString + OZ Base64, pinned to the
 
 ## Hard-won notes
 
+- **Vessel payloads are raw contract storage, not SSTORE2** — ~7.2M gas for a
+  full 9,994-byte entry, roughly 25× what the same bytes cost in a networked.art
+  artifact. Storing once and referencing forever is what pays for it.
 - **Never use anvil's stock keys against a mainnet fork.** Those keys are
   public, and their real mainnet accounts carry EIP-7702 sweeper delegations —
   `onERC721Received` fires mid-mint and the delegated code tries to steal the

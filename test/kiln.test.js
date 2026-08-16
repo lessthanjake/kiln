@@ -5,6 +5,9 @@ import { decodeAbiParameters } from 'viem'
 import {
   CHUNK_SIZE,
   SINGLE_TX_GAS_CAP,
+  chunkForVault,
+  planVaultWrites,
+  vaultCapacity,
   base64Encode,
   base64Decode,
   toDataURI,
@@ -355,4 +358,76 @@ test('the renderable ceiling is where the model crosses the cap', () => {
   assert.ok(max > 130_000 && max < 150_000, `unexpected ceiling ${max}`)
   assert.ok(estimateRenderGas(max) < RENDER_GAS_CAP)
   assert.ok(estimateRenderGas(max + 2000) > RENDER_GAS_CAP)
+})
+
+// ── writing to a vessel ─────────────────────────────────────────────────────
+
+test('a vault entry holds exactly its token id in bytes', () => {
+  assert.equal(vaultCapacity(9994), 9994)
+  assert.equal(vaultCapacity(500n), 500)
+})
+
+test('chunkForVault splits at capacity and lands on the next free entries', () => {
+  const bytes = new Uint8Array(35_308).map((_, i) => i % 251)
+  const plan = chunkForVault(bytes, { vesselTokenId: 9994, startEntry: 41, after: 4 })
+
+  assert.equal(plan.capacity, 9994)
+  assert.equal(plan.chunks.length, 4)
+  assert.deepEqual(plan.chunks.map((c) => c.length), [9994, 9994, 9994, 5326])
+  // startEntry 41 + 4 already queued ahead of it
+  assert.deepEqual(plan.entries, [45, 46, 47, 48])
+  assert.equal(plan.startEntry, 45)
+  assert.equal(plan.endEntry, 48)
+  assert.equal(plan.totalBytes, 35_308)
+})
+
+test('the chunks reassemble byte-identically', () => {
+  const bytes = new Uint8Array(20_000).map((_, i) => (i * 7 + 3) % 256)
+  const { chunks } = chunkForVault(bytes, { vesselTokenId: 3348, startEntry: 0 })
+  const rejoined = new Uint8Array(bytes.length)
+  let off = 0
+  for (const c of chunks) { rejoined.set(c, off); off += c.length }
+  assert.deepEqual(rejoined, bytes)
+})
+
+test('a file that fits in one entry is one chunk, not zero', () => {
+  const plan = chunkForVault(new Uint8Array(10), { vesselTokenId: 9994, startEntry: 7 })
+  assert.equal(plan.chunks.length, 1)
+  assert.deepEqual(plan.entries, [7])
+})
+
+test('an exact multiple of capacity does not emit a trailing empty chunk', () => {
+  const plan = chunkForVault(new Uint8Array(9994 * 2), { vesselTokenId: 9994, startEntry: 0 })
+  assert.equal(plan.chunks.length, 2)
+})
+
+test('chunkForVault refuses input it cannot honestly split', () => {
+  assert.throws(() => chunkForVault(new Uint8Array(0), { vesselTokenId: 9994, startEntry: 0 }), /empty/)
+  assert.throws(() => chunkForVault(new Uint8Array(10), { vesselTokenId: 0, startEntry: 0 }), /capacity/)
+})
+
+test('chunkForVault flags what the renderer could not later assemble', () => {
+  // A small vault needs more entries than a single reference may carry.
+  const many = chunkForVault(new Uint8Array(6_500), { vesselTokenId: 100, startEntry: 0 })
+  assert.equal(many.chunks.length, 65)
+  assert.ok(many.exceedsMaxEntries, `65 chunks should exceed MAX_ENTRIES (${MAX_ENTRIES})`)
+
+  const big = chunkForVault(new Uint8Array(200_000), { vesselTokenId: 9994, startEntry: 0 })
+  assert.ok(big.exceedsContentBudget)
+  assert.ok(!many.exceedsContentBudget)
+})
+
+test('planVaultWrites stacks files so two of them never claim the same slot', () => {
+  const plans = planVaultWrites([
+    { name: 'vessel3d.html', bytes: new Uint8Array(38_757) },
+    { name: 'indexv4.html', bytes: new Uint8Array(35_308) },
+  ], { vesselTokenId: 9994, startEntry: 41 })
+
+  assert.deepEqual(plans[0].entries, [41, 42, 43, 44])
+  assert.deepEqual(plans[1].entries, [45, 46, 47, 48])
+
+  const all = plans.flatMap((p) => p.entries)
+  assert.equal(new Set(all).size, all.length, 'entries collide')
+  // and they are contiguous, in write order
+  assert.deepEqual(all, all.map((_, i) => 41 + i))
 })

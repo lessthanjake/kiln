@@ -50,6 +50,7 @@ export const vesselAbi = parseAbi([
   'function balanceOf(address owner) view returns (uint256)',
   'function craftToType(uint256 tokenId) view returns (string)',
   'function craftToVaultStatus(uint256 tokenId) view returns (bool)',
+  'function craftToLocked(uint256 tokenId) view returns (bool)',
   'function craftToEntry(uint256 tokenId) view returns (uint256)',
   'function craftToChosenEntry(uint256 tokenId) view returns (uint256)',
   'function vaultToEntry(uint256 tokenId, uint256 entry) view returns (bytes)',
