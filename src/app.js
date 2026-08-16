@@ -1095,6 +1095,10 @@ $('mint').addEventListener('click', async () => {
   $('minted').classList.add('hidden')
   try {
     await refreshPrices() // live values at the moment of signing — never stale
+    // The step list was planned when the collection was chosen. Anything can
+    // have happened since, including this app registering the renderer in a
+    // run that was then cancelled.
+    if (state.source === 'vessel') await detectVesselPortal()
     const artifact = currentArtifact()
     const chunks = chunkArtifact(artifact.bytes)
     const steps = currentSteps(chunks.length, artifact.bytes.length)
@@ -1153,6 +1157,11 @@ $('mint').addEventListener('click', async () => {
         })
         await tx({ address: collection, abi: collectionAbi, functionName: 'registerRenderer', args: [state.vesselPortalAddr] })
         rendererIndex = Number(result)
+        // Remember it. Registration is append-only and reverts as
+        // RendererAlreadyRegistered on a second attempt, so a retry that
+        // still thinks the collection has no renderer cannot get past this
+        // step — which is exactly what happened the first time this ran.
+        state.registeredVesselPortalIndex = rendererIndex
       } else if (step.call === 'prepareArtifact') {
         const key = stagedKey(collection, tokenId)
         const done = Number(localStorage.getItem(key) ?? 0)
@@ -1372,9 +1381,19 @@ $('modal-close').addEventListener('click', closeModal)
 $('modal').addEventListener('click', (e) => { if (e.target.id === 'modal') closeModal() })
 window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal() })
 
+/// Bare selectors the protocol reverts with, spelled out. A wallet shows
+/// "execution reverted" and a raw four-byte word, which tells an artist
+/// nothing about what to do next.
+const REVERTS = {
+  '0xc810f15e': 'RendererAlreadyRegistered — this collection already has VesselPortal. Reload the page; the mint becomes one transaction.',
+  '0xa1b9c05a': 'UnknownRenderer — the renderer index does not exist on this collection yet. If the registration just landed, wait a block and retry.',
+}
+
 function showError(err) {
   const el = $('mint-error')
-  el.textContent = String(err?.shortMessage ?? err?.message ?? err)
+  const raw = String(err?.shortMessage ?? err?.message ?? err)
+  const hit = Object.entries(REVERTS).find(([sel]) => raw.includes(sel))
+  el.textContent = hit ? `${hit[1]}\n\n${raw}` : raw
   el.classList.remove('hidden')
   console.error(err)
 }
