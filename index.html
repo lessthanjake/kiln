@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Kiln — mint on-chain on networked.art</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#101012">
+<meta name="description" content="Mint fully on-chain 1/1s on networked.art — artwork in contract storage, or referenced from The Vessel.">
 <style>
   :root {
     --bg: #101012;
@@ -101,8 +104,6 @@
   #steps li.active { color: var(--warn); }
   #steps li.done { color: var(--ok); }
   #steps li.failed { color: var(--err); }
-  #result a { color: var(--ember); }
-  #result code { word-break: break-all; font-size: .75rem; color: var(--dim); }
   .note { font-size: .78rem; color: var(--dim); }
   .intro p { margin: 0 0 .6rem; font-size: .82rem; line-height: 1.6; }
   .intro ol { margin: 0 0 .6rem; padding-left: 1.1rem; }
@@ -143,6 +144,26 @@
   }
   #modal-bar { display: flex; align-items: center; gap: .75rem; }
   #modal-label { flex: 1; font-size: .8rem; color: var(--dim); }
+  #minted {
+    position: fixed; inset: 0; z-index: 60; background: rgba(8,8,10,.96);
+    display: flex; align-items: center; justify-content: center; padding: 1.5rem;
+    overflow: auto;
+  }
+  #minted-card {
+    background: var(--panel); border: 1px solid var(--ember); border-radius: 8px;
+    padding: 1.5rem; max-width: 640px; width: 100%;
+  }
+  #minted-card h2 {
+    margin: 0 0 .35rem; font-size: 1rem; letter-spacing: .2em;
+    text-transform: uppercase; color: var(--ember);
+  }
+  #minted-card #r-frame {
+    width: 100%; height: 300px; margin: .9rem 0 .5rem;
+    border: 1px solid var(--line); border-radius: 6px; background: #000;
+  }
+  #minted-links { margin: .8rem 0; font-size: .85rem; }
+  #minted-links a { color: var(--ember); }
+  #minted-card #r-uri { display: block; margin: .5rem 0 1.1rem; font-size: .7rem; color: var(--dim); word-break: break-all; }
   #modal-frame { flex: 1; width: 100%; border: 1px solid var(--line); border-radius: 6px; background: #000; }
 </style>
 </head>
@@ -336,16 +357,25 @@
       <button id="mint" class="primary" disabled>connect wallet to mint</button>
       <ul id="steps"></ul>
       <p id="mint-error" class="error-text hidden"></p>
-      <div id="result" class="hidden">
-        <p><b>Minted.</b> <a id="r-scan" target="_blank" rel="noopener">etherscan</a> · <a id="r-net" target="_blank" rel="noopener">networked.art</a></p>
-        <p class="note">tokenURI read back from chain, decoded, rendered below — this is the proof, straight from the contract:</p>
-        <iframe id="r-frame" sandbox="allow-scripts" style="width:100%;height:340px;border:1px solid var(--line);border-radius:6px;background:#000"></iframe>
-        <p><code id="r-uri"></code></p>
-      </div>
     </div>
   </section>
   <p id="build-stamp"></p>
 </main>
+<div id="minted" class="hidden">
+  <div id="minted-card">
+    <h2>Minted</h2>
+    <p class="note" id="minted-what"></p>
+    <iframe id="r-frame" sandbox="allow-scripts" title="the minted token, read back from chain"></iframe>
+    <p class="note">Read back from the contract just now — this is the token's own <code>tokenURI</code>, not a local preview.</p>
+    <p id="minted-links">
+      <a id="r-net" target="_blank" rel="noopener">view on networked.art</a> ·
+      <a id="r-scan" target="_blank" rel="noopener">etherscan</a>
+    </p>
+    <p><code id="r-uri"></code></p>
+    <button class="primary" id="minted-done">start another</button>
+  </div>
+</div>
+
 <div id="modal" class="hidden">
   <div id="modal-bar">
     <span id="modal-label"></span>

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="12" fill="#101012"/>
+  <!-- the kiln's mouth: an ember seen through an opening -->
+  <circle cx="32" cy="34" r="15" fill="none" stroke="#2a2a2f" stroke-width="3"/>
+  <circle cx="32" cy="34" r="8" fill="#e2653a"/>
+  <rect x="20" y="12" width="24" height="4" rx="2" fill="#8b8894"/>
+</svg>

@@ -205,7 +205,7 @@ async function refreshPrices() {
   } catch (err) { console.warn('price refresh failed', err) }
 }
 
-async function loadCollections() {
+async function loadCollections(prefer) {
   const count = await state.pub.readContract({
     address: ADDRESSES.factory, abi: factoryAbi, functionName: 'collectionCount', args: [state.account],
   })
@@ -221,7 +221,12 @@ async function loadCollections() {
   sel.innerHTML = state.collections.length
     ? state.collections.map((c, i) => `<option value="${i}">${c.name} — ${c.addr.slice(0, 10)}…</option>`).join('')
     : '<option value="">no collections yet — create one</option>'
-  if (state.collections.length) await selectCollection(0)
+  if (state.collections.length) {
+    const i = state.collections.findIndex((c) => c.addr.toLowerCase() === String(prefer).toLowerCase())
+    const pick = i === -1 ? 0 : i
+    sel.value = String(pick)
+    await selectCollection(pick)
+  }
 }
 
 async function selectCollection(i) {
@@ -322,6 +327,10 @@ for (const id of ['col-name', 'col-symbol', 'tok-name', 'tok-desc', 'tok-id', 'a
 /// be emptied again. `accept` only filters the file-picker dialog — a drag and
 /// drop bypasses it entirely — so the kind check has to live here, or an image
 /// dropped on the artwork slot would be minted labelled `text/html`.
+/// Each drop zone's own clear(), keyed by id — a finished mint empties the
+/// form through these rather than reconstructing the markup a second way.
+const dropClears = new Map()
+
 function wireDrop(dropId, inputId, { kind, onFile, onClear }) {
   const drop = $(dropId)
   const input = $(inputId)
@@ -346,6 +355,7 @@ function wireDrop(dropId, inputId, { kind, onFile, onClear }) {
 
   // Keep the original hint so clearing can restore it verbatim.
   const promptSmall = drop.querySelector('small').cloneNode(true)
+  dropClears.set(dropId, clear)
 
   const accept = async (file) => {
     if (!looksRight(file)) {
@@ -1056,7 +1066,7 @@ function updateMintButton(steps) {
 $('mint').addEventListener('click', async () => {
   $('mint').disabled = true
   $('mint-error').classList.add('hidden')
-  $('result').classList.add('hidden')
+  $('minted').classList.add('hidden')
   try {
     await refreshPrices() // live values at the moment of signing — never stale
     const artifact = currentArtifact()
@@ -1143,7 +1153,7 @@ $('mint').addEventListener('click', async () => {
     }
 
     await showResult(collection, tokenId)
-    await loadCollections()
+    await loadCollections(collection)
   } catch (err) {
     showError(err)
     const active = document.querySelector('#steps li.active')
@@ -1173,14 +1183,68 @@ function stepState(i, cls, note) {
 }
 
 async function showResult(collection, tokenId) {
-  const uri = await state.pub.readContract({ address: collection, abi: collectionAbi, functionName: 'tokenURI', args: [tokenId] })
+  const uri = await state.pub.readContract({
+    address: collection, abi: collectionAbi, functionName: 'tokenURI', args: [tokenId],
+  })
   const json = JSON.parse(new TextDecoder().decode(base64Decode(uri.split(',')[1])))
-  $('r-scan').href = `https://etherscan.io/token/${collection}?a=${tokenId}`
-  $('r-net').href = 'https://networked.art/'
+
+  $('minted-what').textContent = `${json.name || 'Untitled'} — token ${tokenId} in ${collection.slice(0, 10)}…`
   $('r-frame').src = json.animation_url || json.image
   $('r-uri').textContent = `${collection} · token ${tokenId} · tokenURI ${uri.length.toLocaleString()} chars, fully on-chain`
-  $('result').classList.remove('hidden')
+  $('r-scan').href = `https://etherscan.io/token/${collection}?a=${tokenId}`
+  $('r-net').href = await networkedArtUrl(collection, tokenId)
+  $('minted').classList.remove('hidden')
 }
+
+/// networked.art routes a token as /{artist handle}/{collection}/{tokenId} —
+/// the handle is required, a wrong one 404s, and it is not derivable from the
+/// chain. Their public API maps collection → handle; if that call fails, fall
+/// back to the site root rather than sending anyone to a dead page.
+async function networkedArtUrl(collection, tokenId) {
+  try {
+    const res = await fetch(`https://api.networked.art/collections/${collection}`)
+    const handle = (await res.json())?.collection?.attribution_handle
+    if (handle) return `https://networked.art/${encodeURIComponent(handle)}/${collection}/${tokenId}`
+  } catch { /* offline or shape changed */ }
+  return 'https://networked.art/'
+}
+
+/// Everything a finished mint should not leave lying around. Minting the same
+/// artwork twice because the form still looked ready is a real and expensive
+/// mistake, so the form empties itself and the button goes back to disabled.
+async function resetForm() {
+  state.image = null
+  state.html = null
+  state.poster = null
+  state.posterPick = null
+  state.vessel = null
+  state.assembleMode = false
+
+  for (const clear of dropClears.values()) clear()
+  for (const id of ['tok-name', 'tok-desc']) $(id).value = ''
+  $('ack-oversize').checked = false
+  $('assemble-mode').checked = false
+  $('vessel-detail').classList.add('hidden')
+  $('entries-list').innerHTML = ''
+  $('mint-error').classList.add('hidden')
+  $('steps').innerHTML = ''
+  $('preview-frame').src = 'about:blank'
+  $('preview-poster').classList.add('hidden')
+
+  // The collection stays selected — the next piece usually belongs with the
+  // last — but its token id is re-read so a second mint cannot collide with
+  // the one just made.
+  const i = Number($('col-select').value)
+  if (state.collections?.[i]) await selectCollection(i).catch(() => {})
+  recompute()
+}
+
+$('minted-done').addEventListener('click', async () => {
+  $('minted').classList.add('hidden')
+  $('r-frame').src = 'about:blank'
+  await resetForm()
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+})
 
 // ── poster source ───────────────────────────────────────────────────────────
 

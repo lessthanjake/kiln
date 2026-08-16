@@ -43,5 +43,6 @@ await build({
   define: { __KILN_BUILD__: JSON.stringify(info) },
 })
 copyFileSync(join(ROOT, 'index.html'), join(ROOT, 'dist/index.html'))
+copyFileSync(join(ROOT, 'favicon.svg'), join(ROOT, 'dist/favicon.svg'))
 
 console.log(`built ${info.commit} (${info.ref}, ${info.env}) at ${info.builtAt}`)
