@@ -1,36 +1,3 @@
-Kiln is dedicated to the public domain under CC0 1.0 Universal.
-
-No rights reserved. Copy it, change it, sell it, ship it, claim it, or use it
-without saying where it came from. No permission needed, no attribution asked.
-
-## Scope
-
-Two carve-outs, both about honesty rather than restriction:
-
-**`contracts/lib/vendor/` is not mine to give away.** Base64.sol, LibBytes.sol,
-LibString.sol, SafeCast.sol and SSTORE2.sol are vendored third-party code (MIT)
-and stay under their original authors' terms. They are pinned to the exact
-versions the networked.art protocol itself was verified with.
-
-**The `SPDX-License-Identifier: MIT` headers in `contracts/` are frozen, and
-that is deliberate.** Solidity hashes each source file into the metadata it
-appends to the compiled bytecode, so editing that one line changes the deployed
-bytecode. Measured: the metadata tail moves from `6d92f41e2c32…` to
-`d74fcdf7990c…` on that edit alone.
-
-VesselPortal is deployed and immutable at
-0x06dDc03Bc74c63650002cBAc386Ed6aaAA355d34, verified on Sourcify as an exact
-match on both creation and runtime bytecode. Rewriting those headers would mean
-this repository no longer compiles to the contract that is actually on chain,
-and no re-verification could restore that — the deployed bytecode cannot
-change, so a CC0-headered source could only ever register as a partial match.
-Reproducibility is worth more than a tidy header.
-
-The dedication below still applies to that source as authored work. The header
-is a build input, not the license.
-
---------------------------------------------------------------------------------
-
 Creative Commons Legal Code
 
 CC0 1.0 Universal
