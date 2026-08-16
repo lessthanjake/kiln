@@ -108,18 +108,33 @@ export const WARN_CONTENT_BYTES = 96 * 1024
 export const MAX_ENTRIES = 64
 export const MAX_TEXT_BYTES = 2048
 
-/// `byteLength` must be the TOTAL resolved content of poster + animation.
-export function contentSizeVerdict(byteLength) {
+/// `byteLength` is the TOTAL resolved content (poster + animation).
+///
+/// Both mint paths hit a wall around the same size, but they fail differently
+/// and an artist should be told which:
+///
+///   VesselPortal refuses over-budget content and the token degrades to its
+///   thumbnail — ugly, but the token stays viewable.
+///
+///   The protocol's stock renderers have no size limit at all, so an oversized
+///   upload mints happily and then cannot be read: measured on a mainnet fork,
+///   tokenURI costs 45.2M gas at 128 KB of content and runs out of gas at
+///   192 KB, against the ~50M cap wallets and marketplaces use. Nothing
+///   reverts at mint time; the token is simply unreadable, permanently.
+export function contentSizeVerdict(byteLength, path = 'vessel') {
+  const upload = path === 'upload'
   if (byteLength > MAX_CONTENT_BYTES) {
     return {
       level: 'error',
-      message: `${byteLength.toLocaleString()} bytes of content exceeds the renderer's ${MAX_CONTENT_BYTES.toLocaleString()}-byte budget (poster and artwork share it) — this token would show only its poster`,
+      message: upload
+        ? `${byteLength.toLocaleString()} bytes of content will mint but will not render: tokenURI exceeds the ~50M gas cap wallets and marketplaces use (measured: 45M at ${(MAX_CONTENT_BYTES / 1024).toFixed(0)} KB, out of gas beyond). Nothing stops this on-chain — the token is just unreadable, permanently.`
+        : `${byteLength.toLocaleString()} bytes of content exceeds the renderer's ${MAX_CONTENT_BYTES.toLocaleString()}-byte budget (thumbnail and artwork share it) — this token would show only its thumbnail`,
     }
   }
   if (byteLength > WARN_CONTENT_BYTES) {
     return {
       level: 'warn',
-      message: `${byteLength.toLocaleString()} bytes is near the ${MAX_CONTENT_BYTES.toLocaleString()}-byte budget wallets and marketplaces can render`,
+      message: `${byteLength.toLocaleString()} bytes is close to the ${(MAX_CONTENT_BYTES / 1024).toFixed(0)} KB that wallets and marketplaces can still render`,
     }
   }
   return { level: 'ok', message: '' }

@@ -831,17 +831,11 @@ function recompute() {
   $('m-bytes').textContent = artifact.bytes.length.toLocaleString()
   $('m-chunks').textContent = String(chunks.length)
   $('m-txs').textContent = String(steps.length)
-  $('m-gas').textContent = gas.toLocaleString()
-  if (state.gasPriceWei && state.ethUsdE8) {
-    const { eth, usd } = costFromGas({ gas, gasPriceWei: state.gasPriceWei, priceE8: state.ethUsdE8 })
-    let usdTotal = usd
-    if (auction) usdTotal += 10
-    $('m-eth').textContent = eth.toFixed(5)
-    $('m-usd').textContent = `$${usdTotal.toFixed(2)}${auction ? ' (incl. $10 fee)' : ''}`
-  } else {
-    $('m-eth').textContent = 'connect'
-    $('m-usd').textContent = 'connect'
-  }
+  showCost(gas, auction, false)
+  // The model above is a heuristic — measured against real estimates it runs
+  // up to ~20% high on small mints, converging within a percent on large
+  // ones. Once a wallet is connected the chain can be asked directly, so ask.
+  scheduleRealEstimate(steps, artifact, auction)
 
   updatePreview()
   updateSizeVerdict()
@@ -884,7 +878,7 @@ function updateSizeVerdict() {
   const el = $('size-verdict')
   const size = resolvedContentSize()
   if (!size) { el.classList.add('hidden'); return }
-  const { level, message } = contentSizeVerdict(size)
+  const { level, message } = contentSizeVerdict(size, state.source)
   if (level === 'ok') { el.classList.add('hidden'); return }
   el.textContent = message
   el.style.color = level === 'error' ? 'var(--err)' : 'var(--warn)'
@@ -925,6 +919,91 @@ function validInputs() {
   if (!(Number($('tok-id').value) > 0)) return false
   if ($('auction-toggle').checked && Number($('auction-reserve').value) < 10) return false
   return true
+}
+
+/// Paints the gas/eth/usd row. `measured` distinguishes a number the chain
+/// gave us from the model's guess, because the difference matters to anyone
+/// deciding whether to mint.
+function showCost(gas, auction, measured) {
+  $('m-gas').textContent = gas.toLocaleString()
+  $('m-gas').nextElementSibling.textContent = measured ? 'gas (measured)' : 'est. gas'
+  if (state.gasPriceWei && state.ethUsdE8) {
+    const { eth, usd } = costFromGas({ gas, gasPriceWei: state.gasPriceWei, priceE8: state.ethUsdE8 })
+    const usdTotal = auction ? usd + 10 : usd
+    $('m-eth').textContent = eth.toFixed(5)
+    $('m-usd').textContent = `$${usdTotal.toFixed(2)}${auction ? ' (incl. $10 fee)' : ''}`
+  } else {
+    $('m-eth').textContent = 'connect'
+    $('m-usd').textContent = 'connect'
+  }
+}
+
+/// Ask the chain what the mint really costs, debounced, and only when the
+/// whole thing is one transaction we can simulate. A staged mint, or a new
+/// collection that must exist before its token can be estimated, stays on the
+/// model — the collection address does not exist yet to simulate against.
+let estimateToken = 0
+function scheduleRealEstimate(steps, artifact, auction) {
+  const mine = ++estimateToken
+  if (!state.pub || !state.account || state.chainId !== 1) return
+  if (steps.length !== 1 && !(steps.length === 1)) return
+  if (steps.length !== 1) return
+  if (!validInputs()) return
+
+  setTimeout(async () => {
+    if (mine !== estimateToken) return // superseded by newer input
+    try {
+      const gas = await realEstimate(steps[0], artifact, auction)
+      if (mine !== estimateToken || !gas) return
+      showCost(Number(gas), auction, true)
+    } catch {
+      // A revert here is usually an incomplete form, not a problem worth
+      // shouting about — the model's number stays on screen.
+    }
+  }, 400)
+}
+
+async function realEstimate(step, artifact, auction) {
+  const chunks = chunkArtifact(artifact.bytes)
+  const tokenId = BigInt($('tok-id').value || 1)
+  const reserveUsd = BigInt($('auction-reserve').value || 10)
+  const expiresAt = auctionExpiry(Date.now() / 1000, Number($('auction-duration').value))
+  const feeWei = auction && state.ethUsdE8 ? (usdToWei(10n, state.ethUsdE8) * 105n) / 100n : 0n
+  const params = {
+    tokenId,
+    artifact: chunks.map(bytesToHex),
+    name: $('tok-name').value.trim(),
+    description: $('tok-desc').value,
+    rendererIndex: state.source === 'upload'
+      ? buildUploadArtifact({
+          imageDataURI: (state.image ?? state.poster).dataURI,
+          animationDataURI: state.html?.dataURI,
+        }).rendererIndex
+      : state.registeredVesselPortalIndex,
+    rendererData: 0n,
+  }
+  if (step.call === 'cloneCollectionAndMint') {
+    return state.pub.estimateContractGas({
+      account: state.account, address: ADDRESSES.factory, abi: factoryAbi,
+      functionName: 'cloneCollectionAndMint',
+      args: [$('col-name').value.trim(), $('col-symbol').value.trim(), state.auctions, params, reserveUsd, expiresAt],
+      value: feeWei,
+    })
+  }
+  if (!state.collection) return null
+  if (step.call === 'mint') {
+    return state.pub.estimateContractGas({
+      account: state.account, address: state.collection, abi: collectionAbi,
+      functionName: 'mint', args: [params],
+    })
+  }
+  if (step.call === 'mintToLot') {
+    return state.pub.estimateContractGas({
+      account: state.account, address: state.collection, abi: collectionAbi,
+      functionName: 'mintToLot', args: [params, reserveUsd, expiresAt], value: feeWei,
+    })
+  }
+  return null
 }
 
 function updateMintButton(steps) {

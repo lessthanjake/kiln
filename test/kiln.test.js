@@ -242,6 +242,16 @@ test('auctionExpiry is computed from now, not stored', () => {
   assert.equal(auctionExpiry(1_000_000, 86_400), 1_086_400n)
 })
 
+test('an oversized upload is warned about differently than a vessel reference', () => {
+  const over = MAX_CONTENT_BYTES + 1
+  // VesselPortal refuses and degrades — the token still shows something.
+  assert.match(contentSizeVerdict(over, 'vessel').message, /only its thumbnail/)
+  // The stock renderers do not refuse; the token mints and cannot be read.
+  const up = contentSizeVerdict(over, 'upload').message
+  assert.match(up, /will mint but will not render/)
+  assert.match(up, /permanently/)
+})
+
 test('content size verdict tracks the shared renderer budget', () => {
   assert.equal(contentSizeVerdict(50_000).level, 'ok')
   assert.equal(contentSizeVerdict(WARN_CONTENT_BYTES + 1).level, 'warn')
