@@ -17,15 +17,18 @@ export const ADDRESSES = {
   vessel: '0xECb92Cc7112b80A2234936315BbB493fb48d1463', // THE_VESSEL
   relics: '0x48cB121Fa84b7C08692e74872D044B15369977CD', // THE_VESSEL_relics
 
-  // The canonical VesselPortal, once deployed on mainnet. Fill this in and
-  // Kiln never deploys another: the renderer is stateless and ownerless, so
-  // one deployment serves every collection and every artist. Leave null and
-  // Kiln offers a one-time deploy, then remembers it locally.
+  // The canonical VesselPortal. Deployed 2026-08-16 in block 25767423 and
+  // proven against the live contracts: name() "VesselPortal", version() 1,
+  // wired to the vessel and relics addresses above, selfTest(9994) true.
+  //
+  // Kiln never deploys another. The renderer is stateless and ownerless, so
+  // one deployment serves every collection and every artist — anyone can
+  // register this same address on their own collection.
   //
   // Kiln verifies this address before trusting it (code present, and
   // name() == "VesselPortal"), so a wrong value degrades to "deploy your
   // own" rather than pointing tokens at a stranger's contract.
-  vesselPortal: null,
+  vesselPortal: '0x06dDc03Bc74c63650002cBAc386Ed6aaAA355d34',
 }
 
 export const RENDERER = { default: 0, animation: 1 }

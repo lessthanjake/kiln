@@ -166,16 +166,9 @@ cd contracts
 forge script script/Deploy.s.sol --rpc-url $MAINNET_RPC_URL --interactive --broadcast
 ```
 
-**After the first mainnet deployment, record it** in `src/kiln.js`:
-
-```js
-export const ADDRESSES = {
-  …
-  vesselPortal: '0xYourDeployedAddress',
-}
-```
-
-Kiln then never deploys another. The renderer is stateless and ownerless, so
+**Deployed on mainnet at `0x06dDc03Bc74c63650002cBAc386Ed6aaAA355d34`** (block
+25767423), recorded as the canonical address in `src/kiln.js`. Kiln never
+deploys another. The renderer is stateless and ownerless, so
 one deployment serves every collection and every artist — anyone in the Vessel
 community can register that same address on their own collection. Kiln
 verifies the constant at connect time (code present, `name() == "VesselPortal"`),
@@ -184,6 +177,13 @@ at a stranger's contract.
 
 Registration is still one ~85k-gas transaction per collection; that part is
 unavoidable, since each collection keeps its own renderer registry.
+
+## Drafts
+
+The form is kept in `localStorage` as you fill it — fields, the vessel and its
+entry order, and the uploaded bytes themselves up to 512 KB per file. A reload
+restores it and says so, with one click to start fresh. A completed mint clears
+it. Nothing leaves the browser, and an untouched form saves nothing.
 
 ## Costs (mainnet, measured on fork)
 

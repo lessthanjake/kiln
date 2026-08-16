@@ -121,6 +121,10 @@
   #build-stamp .dot.stale { color: var(--warn); }
   .error-text { color: var(--err); font-size: .8rem; white-space: pre-wrap; word-break: break-word; }
   .drop-error { margin: .4rem 0 0; }
+  #draft-note { margin: 0 0 1.2rem; font-size: .8rem; color: var(--dim);
+    border-left: 2px solid var(--ember); padding-left: .8rem; }
+  .linkish { background: none; border: 0; padding: 0; font: inherit;
+    color: var(--ember); text-decoration: underline; cursor: pointer; }
   .assemble-toggle { display: flex; gap: .5rem; align-items: center; font-size: .78rem; margin: .75rem 0 .25rem; }
   .assemble-toggle input { margin: 0; }
   .order-badge {
@@ -202,6 +206,11 @@
       <p class="contracts">Contracts this page talks to: <span id="contract-links"></span></p>
     </div>
   </section>
+
+  <p id="draft-note" class="hidden">
+    Picked up where you left off — this form was restored from a draft in this
+    browser. <button type="button" class="linkish" id="draft-discard">start fresh</button>
+  </p>
 
   <section id="s-destination">
     <h2>Collection</h2>

@@ -12,7 +12,7 @@ import {
   estimateRenderGas, RENDER_GAS_CAP, maxRenderableBytes,
   xmlAssemblyWarnings, buildUploadArtifact,
   KIND, referenceSource, inlineSource, absentSource, buildArtifact, isMutableSource,
-  chunkArtifact, toDataURI, bytesToHex, base64Decode, estimateGas,
+  chunkArtifact, toDataURI, bytesToHex, base64Decode, base64Encode, estimateGas,
   usdToWei, costFromGas, planFlow, auctionExpiry,
 } from './kiln.js'
 import { factoryAbi, collectionAbi, auctionsAbi, chainlinkAbi, vesselAbi, relicsAbi } from './abi.js'
@@ -20,6 +20,21 @@ import vesselPortalArtifact from './vesselPortalArtifact.js'
 
 const $ = (id) => document.getElementById(id)
 const VESSELPORTAL_KEY = 'kiln.vesselPortal'
+const EXPLORER = 'https://evm.now'
+
+// Draft persistence — see the draft section below. These live up here because
+// the first recompute() runs before that section is evaluated.
+const DRAFT_KEY = 'kiln.draft'
+const DRAFT_FILE_LIMIT = 512 * 1024
+const DRAFT_FIELDS = [
+  'col-name', 'col-symbol', 'tok-name', 'tok-id', 'tok-desc',
+  'auction-reserve', 'auction-duration', 'vessel-id', 'vessel-mime',
+]
+
+// Read once, here, before anything can overwrite it. The first recompute()
+// runs while the form is still empty and would otherwise save that emptiness
+// over the draft it is about to restore.
+const PENDING_DRAFT = readDraft()
 const stagedKey = (col, id) => `kiln.staged.${col?.toLowerCase()}.${id}`
 
 const GAS_EXTRA = { registerRenderer: 95_000, deployVesselPortal: 1_200_000 }
@@ -91,6 +106,7 @@ $('connect').addEventListener('click', async () => {
 
     await refreshPrices()
     await loadCollections()
+    await restoreDraftChain() // collection + vessel inspection, needs the wallet
     recompute()
     loadOwnedVessels() // background — populates the vessel picker when done
   } catch (err) { showError(err) }
@@ -330,6 +346,7 @@ for (const id of ['col-name', 'col-symbol', 'tok-name', 'tok-desc', 'tok-id', 'a
 /// Each drop zone's own clear(), keyed by id — a finished mint empties the
 /// form through these rather than reconstructing the markup a second way.
 const dropClears = new Map()
+const dropFills = new Map()
 
 function wireDrop(dropId, inputId, { kind, onFile, onClear }) {
   const drop = $(dropId)
@@ -378,6 +395,11 @@ function wireDrop(dropId, inputId, { kind, onFile, onClear }) {
     }
     forgive()
     await onFile(file)
+    // Keep the bytes for the draft. Large files are skipped rather than
+    // risking the whole draft against a localStorage quota error.
+    input._draftFile = file.size <= DRAFT_FILE_LIMIT
+      ? { name: file.name, type: file.type, b64: base64Encode(await fileBytes(file)) }
+      : null
     drop.classList.add('filled')
     drop.innerHTML = ''
     drop.append(
@@ -387,6 +409,12 @@ function wireDrop(dropId, inputId, { kind, onFile, onClear }) {
     drop.querySelector('.clear').addEventListener('click', (e) => { e.stopPropagation(); clear() })
     recompute()
   }
+
+  // Restoring a draft has bytes, not a File. Reuse the same fill path so a
+  // restored zone is indistinguishable from a dropped one.
+  dropFills.set(dropId, async ({ name, bytes, type }) => {
+    await accept(new File([bytes], name, { type }))
+  })
 
   drop.addEventListener('click', () => input.click())
   drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over') })
@@ -444,7 +472,12 @@ wireDrop('drop-poster', 'file-poster', {
 
 // ── vessel inspection ───────────────────────────────────────────────────────
 
-$('vessel-inspect').addEventListener('click', async () => {
+$('vessel-inspect').addEventListener('click', () => { inspectVessel() })
+
+/// `restore` re-applies a saved selection. It is applied as soon as the vessel
+/// is known rather than after its entries finish streaming in, so a slow RPC
+/// shows the picks arriving already checked instead of losing them.
+async function inspectVessel(restore = null) {
   try {
     if (!state.pub) { showError('connect a wallet first — vessel reads go through it'); return }
     const id = BigInt($('vessel-id').value || 0)
@@ -480,6 +513,12 @@ $('vessel-inspect').addEventListener('click', async () => {
       id, type, isVault, isRelic, entryCount, chosenEntry,
       entries: [], relicEntries: [], sourceContract: isRelic ? 'relics' : 'vessel',
       mode: isVault ? 'pinned' : 'live',
+    }
+    if (restore) {
+      if (restore.sourceContract) state.vessel.sourceContract = restore.sourceContract
+      if (restore.mode) state.vessel.mode = restore.mode
+      state.vessel.vesselSelection = restore.vesselSelection ?? []
+      state.vessel.relicSelection = restore.relicSelection ?? []
     }
     $('vessel-detail').classList.remove('hidden')
     const entries = await readEntries({
@@ -561,7 +600,7 @@ $('vessel-inspect').addEventListener('click', async () => {
     setActive($('vessel-mode'), $('vessel-mode').querySelector(`[data-mode=${state.vessel.mode}]`))
     recompute()
   } catch (err) { showError(err) }
-})
+}
 
 // The list and payload the current source contract provides.
 function activeEntries() {
@@ -846,6 +885,7 @@ function currentSteps(chunkCount, byteLength) {
 }
 
 function recompute() {
+  saveDraft()
   const artifact = currentArtifact()
   const auction = $('auction-toggle').checked
   const newCollection = state.dest === 'new'
@@ -1226,7 +1266,7 @@ async function showResult(collection, tokenId) {
   $('minted-what').textContent = `${json.name || 'Untitled'} — token ${tokenId} in ${collection.slice(0, 10)}…`
   $('r-frame').src = json.animation_url || json.image
   $('r-uri').textContent = `${collection} · token ${tokenId} · tokenURI ${uri.length.toLocaleString()} chars, fully on-chain`
-  $('r-scan').href = `https://etherscan.io/token/${collection}?a=${tokenId}`
+  $('r-scan').href = `${EXPLORER}/token/${collection}?a=${tokenId}`
   $('r-net').href = await networkedArtUrl(collection, tokenId)
   $('minted').classList.remove('hidden')
 }
@@ -1235,12 +1275,29 @@ async function showResult(collection, tokenId) {
 /// the handle is required, a wrong one 404s, and it is not derivable from the
 /// chain. Their public API maps collection → handle; if that call fails, fall
 /// back to the site root rather than sending anyone to a dead page.
+/// networked.art's API sends no Access-Control-Allow-Origin header, so calling
+/// it from the page fails in the browser however well it works in a terminal.
+/// api/handle.js forwards the request same-origin. Running Kiln locally there
+/// is no such route, so the handle is derived from the collection's own name
+/// — "<handle>'s Networked Collection" is what their UI creates — and only
+/// then does it give up and link the site root.
 async function networkedArtUrl(collection, tokenId) {
+  const link = (handle) => `https://networked.art/${encodeURIComponent(handle)}/${collection}/${tokenId}`
+
   try {
-    const res = await fetch(`https://api.networked.art/collections/${collection}`)
-    const handle = (await res.json())?.collection?.attribution_handle
-    if (handle) return `https://networked.art/${encodeURIComponent(handle)}/${collection}/${tokenId}`
-  } catch { /* offline or shape changed */ }
+    const res = await fetch(`/api/handle?collection=${collection}`)
+    if (res.ok) {
+      const { handle } = await res.json()
+      if (handle) return link(handle)
+    }
+  } catch { /* no proxy here — fall through */ }
+
+  try {
+    const name = await state.pub.readContract({ address: collection, abi: collectionAbi, functionName: 'name' })
+    const derived = /^(.+?)'s Networked Collection$/.exec(name)?.[1]
+    if (derived) return link(derived)
+  } catch { /* chain unreachable */ }
+
   return 'https://networked.art/'
 }
 
@@ -1248,6 +1305,7 @@ async function networkedArtUrl(collection, tokenId) {
 /// artwork twice because the form still looked ready is a real and expensive
 /// mistake, so the form empties itself and the button goes back to disabled.
 async function resetForm() {
+  clearDraft()
   state.image = null
   state.html = null
   state.poster = null
@@ -1399,6 +1457,7 @@ function showError(err) {
 }
 
 recompute()
+restoreDraftForm()
 
 // ── what this page talks to ─────────────────────────────────────────────────
 //
@@ -1414,9 +1473,175 @@ recompute()
   ]
   el.innerHTML = entries
     .map(([label, addr]) => addr
-      ? `<a href="https://etherscan.io/address/${addr}#code" target="_blank" rel="noopener" title="${addr}">${label}</a>`
+      ? `<a href="${EXPLORER}/address/${addr}#code" target="_blank" rel="noopener" title="${addr}">${label}</a>`
       : `<span title="deployed on your first vessel mint">${label} (not yet deployed)</span>`)
     .join(' · ')
+}
+
+
+// ── draft ───────────────────────────────────────────────────────────────────
+//
+// A reload used to cost everything: the uploaded bytes, the vessel inspection,
+// the entry order. Nothing here is secret and none of it leaves the browser,
+// so it is kept in localStorage and restored on load.
+//
+// Files are saved too, since re-picking them is the tedious part — but only up
+// to DRAFT_FILE_LIMIT each, because localStorage is a few megabytes and losing
+// the whole draft to one oversized file would be worse than not saving it.
+
+let restoring = false
+
+function fileDraft(id) {
+  const input = $(id)
+  return input?._draftFile ?? null
+}
+
+function saveDraft() {
+  if (restoring) return
+  try {
+    const d = {
+      v: 1,
+      dest: state.dest,
+      source: state.source,
+      posterMode: state.posterMode,
+      assembleMode: state.assembleMode,
+      auction: $('auction-toggle').checked,
+      collection: state.collection,
+      fields: Object.fromEntries(DRAFT_FIELDS.map((f) => [f, $(f)?.value ?? ''])),
+      files: Object.fromEntries(['file-image', 'file-html', 'file-poster']
+        .map((id) => [id, fileDraft(id)])
+        .filter(([, f]) => f)),
+      vessel: state.vessel && {
+        id: String(state.vessel.id),
+        mode: state.vessel.mode,
+        sourceContract: state.vessel.sourceContract,
+        vesselSelection: state.vessel.vesselSelection ?? [],
+        relicSelection: state.vessel.relicSelection ?? [],
+      },
+      posterPick: state.posterPick && {
+        vesselId: String(state.posterPick.vesselId),
+        index: state.posterPick.index,
+        mime: state.posterPick.mime,
+        size: state.posterPick.size,
+      },
+    }
+    // An untouched form is not a draft. Saving it would put the "restored
+    // from a draft" note in front of every first-time visitor.
+    if (!draftHasContent(d)) { localStorage.removeItem(DRAFT_KEY); return }
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(d))
+  } catch (err) {
+    // Quota is the realistic failure. A draft that cannot be saved is not
+    // worth breaking the form over.
+    console.warn('draft not saved', err)
+  }
+}
+
+/// Something a reload would actually lose.
+function draftHasContent(d) {
+  if (Object.keys(d.files ?? {}).length) return true
+  if (d.vessel?.vesselSelection?.length || d.vessel?.relicSelection?.length) return true
+  if (d.posterPick) return true
+  const typed = ['col-name', 'col-symbol', 'tok-name', 'tok-desc', 'vessel-id']
+  return typed.some((f) => (d.fields?.[f] ?? '').trim() !== '')
+}
+
+function clearDraft() {
+  localStorage.removeItem(DRAFT_KEY)
+  for (const id of ['file-image', 'file-html', 'file-poster']) {
+    const input = $(id)
+    if (input) input._draftFile = null
+  }
+}
+
+function readDraft() {
+  try {
+    const d = JSON.parse(localStorage.getItem(DRAFT_KEY) ?? 'null')
+    return d?.v === 1 ? d : null
+  } catch { return null }
+}
+
+/// Everything that does not need a wallet. Runs at load so the form is already
+/// filled by the time a wallet is connected.
+async function restoreDraftForm() {
+  const d = PENDING_DRAFT
+  if (!d) return
+  restoring = true
+  try {
+    for (const [f, v] of Object.entries(d.fields ?? {})) { if ($(f)) $(f).value = v }
+    $('auction-toggle').checked = !!d.auction
+    $('auction-toggle').dispatchEvent(new Event('change'))
+    if (d.assembleMode) { $('assemble-mode').checked = true; state.assembleMode = true }
+
+    clickChoice('dest-choice', 'dest', d.dest)
+    clickChoice('source-choice', 'source', d.source)
+    clickChoice('poster-mode', 'pmode', d.posterMode)
+
+    for (const [id, file] of Object.entries(d.files ?? {})) {
+      const fill = dropFills.get(id.replace('file-', 'drop-'))
+      if (fill) await fill({ name: file.name, type: file.type, bytes: base64Decode(file.b64) })
+    }
+  } finally {
+    restoring = false
+  }
+  recompute()
+  announceDraft()
+}
+
+function clickChoice(groupId, attr, value) {
+  if (!value) return
+  const btn = $(groupId)?.querySelector(`button[data-${attr}="${value}"]`)
+  if (btn && !btn.classList.contains('active')) btn.click()
+}
+
+/// The parts that need a connected wallet: the collection, and re-inspecting
+/// the vessel so the entry list is populated and the saved order re-applied.
+async function restoreDraftChain() {
+  const d = PENDING_DRAFT
+  if (!d) return
+  restoring = true
+  try {
+    if (d.collection) {
+      const i = state.collections.findIndex((c) => c.addr.toLowerCase() === d.collection.toLowerCase())
+      if (i !== -1) {
+        $('col-select').value = String(i)
+        await selectCollection(i)
+        // selectCollection suggests the next token id; the draft's own value wins.
+        if (d.fields?.['tok-id']) $('tok-id').value = d.fields['tok-id']
+      }
+    }
+    if (d.vessel && d.source === 'vessel') {
+      $('vessel-id').value = d.vessel.id
+      // Not awaited: entries stream in over many round trips, and the rest of
+      // the restore does not depend on them.
+      inspectVessel(d.vessel).then(() => {
+        if (!state.vessel) return
+        clickChoice('vessel-mode', 'mode', state.vessel.mode)
+        renderEntries()
+        renderPosterChoices()
+        recompute()
+      })
+    }
+    if (d.posterPick) {
+      state.posterPick = { ...d.posterPick, vesselId: BigInt(d.posterPick.vesselId) }
+      renderPosterChoices()
+    }
+  } catch (err) {
+    console.warn('could not restore the chain half of the draft', err)
+  } finally {
+    restoring = false
+  }
+  recompute()
+}
+
+function announceDraft() {
+  const note = $('draft-note')
+  if (!note) return
+  note.classList.remove('hidden')
+  $('draft-discard').onclick = () => {
+    clearDraft()
+    note.classList.add('hidden')
+    location.reload()
+  }
 }
 
 // ── build identity ──────────────────────────────────────────────────────────

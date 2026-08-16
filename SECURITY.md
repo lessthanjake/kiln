@@ -52,7 +52,8 @@ tripwire, and it does not require you to trust anyone's word.
 
 The address matters more than the domain:
 
-- Check the VesselPortal address Kiln shows against the one you expect.
+- Check the VesselPortal address Kiln shows against the canonical
+  `0x06dDc03Bc74c63650002cBAc386Ed6aaAA355d34`.
 - Check its `vessel()` and `relics()` return the real Vessel contracts, and
   that its source is verified. `script/publish-renderer.sh <address>` does all
   three in one command.

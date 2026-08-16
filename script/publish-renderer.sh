@@ -105,4 +105,4 @@ PY
 echo
 echo "Done. Next:"
 echo "  npm run build         # bake the address into dist/"
-echo "  https://etherscan.io/address/$ADDR#code"
+echo "  https://evm.now/address/$ADDR#code"
