@@ -66,7 +66,11 @@ echo "Publishing source…"
 ARGS=$(cast abi-encode "constructor(address,address)" "$VESSEL" "$RELICS")
 
 cd "$ROOT/contracts"
-if forge verify-contract "$ADDR" src/VesselPortal.sol:VesselPortal \
+# `env -u` matters: forge silently prefers Etherscan whenever ETHERSCAN_API_KEY
+# is set — it overrides --verifier and says so — so with a key exported this
+# step would hit Etherscan twice and report a Sourcify verification that never
+# happened.
+if env -u ETHERSCAN_API_KEY forge verify-contract "$ADDR" src/VesselPortal.sol:VesselPortal \
      --chain mainnet --constructor-args "$ARGS" --verifier sourcify 2>&1 | tail -3; then
   ok "sourcify"
 else
